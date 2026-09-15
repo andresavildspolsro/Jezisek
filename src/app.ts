@@ -614,6 +614,8 @@ function settingsView(main: HTMLElement, ctx: Ctx): void {
           el('button', { class: 'btn secondary small', onClick: () => void shareInvite(g.name, g.invite_code) }, 'Pozvat'),
         ),
       ),
+      el('a', { class: 'btn secondary block', href: '#/novy' }, '+ Založit další skupinu'),
+      el('p', { class: 'muted small' }, 'Další skupina má vlastní pozvánku, třeba pro kolegy nebo kamarády, aniž bys jim dával odkaz na rodinu. Tvůj seznam přání je pořád jeden.'),
       el('hr', { style: 'border:0;border-top:1px solid var(--line);margin:4px 0' }),
       el('p', { class: 'muted small' }, 'Máš pozvánku do další skupiny (třeba od druhé strany rodiny)? Přidej se i tam. Tvoje přání se ukážou v obou.'),
       joinErr,

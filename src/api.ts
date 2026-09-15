@@ -155,6 +155,8 @@ export const api = {
   logout: (token: string) => rpc<null>('logout', { p_token: token }),
 
   me: (token: string) => rpc<Me>('me', { p_token: token }),
+  createGroupAsMember: (token: string, groupName: string) =>
+    rpc<GroupRef & { group_id: string }>('create_group_as_member', { p_token: token, p_group_name: groupName }),
   joinGroup: (token: string, code: string) =>
     rpc<{ group_id: string; name: string; already: boolean }>('join_group', { p_token: token, p_code: code }),
   groupPeople: (token: string, group: string) =>

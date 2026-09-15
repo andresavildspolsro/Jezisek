@@ -313,6 +313,10 @@ function registerForm(preview: GroupPreview, code: string): HTMLElement {
 // ---------------------------------------------------------------------------
 
 export async function renderCreateGroup(root: HTMLElement): Promise<void> {
+  if (session.token) {
+    await renderCreateGroupAsMember(root, session.token);
+    return;
+  }
   const err = el('div');
   const groupName = textInput({ placeholder: 'Např. Novákovi, Vánoce u babičky…', maxLength: 60 });
   const name = textInput({ placeholder: 'Jak ti ostatní říkají', autocomplete: 'name', maxLength: 40 });
@@ -381,6 +385,71 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
   );
 
   root.append(hero('Nová skupina', 'Ty začínáš, ostatní se přidají přes odkaz.'), main);
+}
+
+/** Další skupina pro už přihlášeného člověka: jen název, přání zůstávají jedna. */
+async function renderCreateGroupAsMember(root: HTMLElement, token: string): Promise<void> {
+  const err = el('div');
+  const groupName = textInput({ placeholder: 'Např. Kolegové, Kamarádi z hor…', maxLength: 60 });
+  const btn = el('button', { class: 'btn block', type: 'submit' }, 'Založit skupinu');
+  const main = el('main', { class: 'wrap plain' });
+  let me: { name: string; children: { name: string }[] } | null = null;
+  try {
+    me = await api.me(token);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'unauthorized') {
+      session.end();
+      navigate('#/novy');
+      return;
+    }
+    throw e;
+  }
+  const kids = me.children.map((c) => c.name);
+
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    clear(err);
+    if (!groupName.value.trim()) {
+      err.appendChild(errorBox('Pojmenuj skupinu.'));
+      groupName.focus();
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const r = await api.createGroupAsMember(token, groupName.value);
+      session.selectGroup(r.group_id, r.invite_code);
+      clear(main);
+      main.append(successCard(r.name, r.invite_code));
+      window.scrollTo(0, 0);
+    } catch (ex) {
+      err.appendChild(errorBox(errorText(ex)));
+      btn.disabled = false;
+    }
+  };
+
+  main.append(
+    el(
+      'form',
+      { class: 'stack', onSubmit: submit },
+      el(
+        'div',
+        { class: 'card stack' },
+        el('h2', {}, 'Další skupina'),
+        el(
+          'p',
+          { class: 'muted small' },
+          `Nová skupina dostane vlastní kód pozvánky, takže nemusíš nikomu dávat odkaz na svou stávající skupinu. Přidáš se do ní jako ${me.name}`,
+          kids.length ? ` i s dětmi (${kids.join(', ')})` : '',
+          '. Tvůj seznam přání zůstává jeden a tentýž: co si přeješ a co už je koupené, platí ve všech skupinách.',
+        ),
+        field('Název skupiny', groupName),
+      ),
+      err,
+      btn,
+      el('a', { class: 'btn ghost block', href: '#/ja' }, 'Zpět'),
+    ),
+  );
+  root.append(hero('Nová skupina', 'Další okruh lidí, další pozvánka.'), main);
 }
 
 function successCard(groupName: string, code: string): HTMLElement {

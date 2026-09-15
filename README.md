@@ -15,7 +15,10 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
   skupiny. Kdo začíná, založí skupinu a dostane kód / odkaz pozvánky
   (`#/s/KÓD`). Kdo ho otevře, buď se přihlásí (výběr jména + PIN), nebo se
   zaregistruje (jméno, PIN, aspoň tři dárky). Člověk může být ve více
-  skupinách; přidá se dalším kódem v záložce **Já**.
+  skupinách: přidá se dalším kódem v záložce **Já**, nebo si tam založí
+  další skupinu s vlastní pozvánkou (třeba pro kolegy, aniž by jim dával
+  odkaz na rodinu). Dárky patří člověku, ne skupině, takže všechny skupiny
+  vidí stejný seznam a koupený dárek je obsazený všude.
 - **Přihlášení** je jméno + PIN (4 až 6 číslic), jméno je jedinečné v rámci
   skupiny. Po pěti špatných PINech je účet 15 minut zamčený. Relace platí
   180 dní.
