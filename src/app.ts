@@ -26,7 +26,7 @@ import {
 } from './ui';
 import { navigate } from './main';
 import { downloadDoc, printDoc, purchasesDoc, wishlistDoc, type ExportDoc } from './export';
-import { authErrorText, googleUrl, onlyWithGoogle, pending, signIn, signUp } from './account';
+import { authErrorText, googleOffered, googleUrl, onlyWithGoogle, pending, signIn, signUp } from './account';
 
 interface Ctx {
   token: string;
@@ -1472,7 +1472,13 @@ function accountCard(ctx: Ctx): HTMLElement {
     'div',
     { class: 'card stack' },
     el('h3', {}, 'Přihlašování'),
-    el('p', { class: 'muted small' }, 'Teď se přihlašuješ jménem a PINem. Připoj si e-mail nebo Google a půjde to i bez PINu.'),
+    el(
+      'p',
+      { class: 'muted small' },
+      googleOffered
+        ? 'Teď se přihlašuješ jménem a PINem. Připoj si e-mail nebo Google a půjde to i bez PINu.'
+        : 'Teď se přihlašuješ jménem a PINem. Připoj si e-mail a půjde to i bez PINu.',
+    ),
     onlyWithGoogle(
       el(
         'button',

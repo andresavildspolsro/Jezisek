@@ -72,11 +72,13 @@ V Supabase (projekt `jezisek`):
 - **Authentication → URL Configuration**: Site URL na adresu aplikace, do
   Redirect URLs přidat tutéž adresu. Bez toho se odkazy z e-mailů a návrat
   od Googlu vrátí jinam.
-- **Authentication → Providers → Google**: zapnout a vložit Client ID a
-  Client Secret z Google Cloud (OAuth 2.0 Client, typ Web application,
-  Authorized redirect URI `https://<projekt>.supabase.co/auth/v1/callback`).
-  Dokud poskytovatel zapnutý není, aplikace se na to sama ptá přes
-  `/auth/v1/settings` a tlačítka s Googlem vůbec nenabídne.
+- **Google je zatím vypnutý.** V `.env` je `VITE_GOOGLE_LOGIN=off`, takže
+  aplikace Google nikde nenabízí ani nezmiňuje. Až ho budeš chtít: v Google
+  Cloud založ OAuth klienta (typ Web application, Authorized redirect URI
+  `https://<projekt>.supabase.co/auth/v1/callback`), v Supabase ho zapni v
+  Authentication → Providers → Google, a v `.env` přepni na
+  `VITE_GOOGLE_LOGIN=on`. Aplikace si pak přes `/auth/v1/settings` ještě
+  ověří, že poskytovatel opravdu běží, a teprve potom tlačítka ukáže.
 - **Edge Functions → send-list → Secrets**: `RESEND_API_KEY` z Resendu a
   `JEZISEK_FROM` ve tvaru `Ježíšek <jezisek@tvojedomena.cz>` s ověřenou
   doménou. Dokud chybí, tlačítko Poslat e-mailem vrátí srozumitelnou hlášku

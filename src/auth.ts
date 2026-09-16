@@ -17,7 +17,7 @@ import {
   toast,
 } from './ui';
 import { navigate, resolveAccount } from './main';
-import { authErrorText, googleUrl, heldAccount, onlyWithGoogle, pending, sendRecovery, signIn, signUp } from './account';
+import { authErrorText, googleOffered, googleUrl, heldAccount, onlyWithGoogle, pending, sendRecovery, signIn, signUp } from './account';
 
 function hero(title: string, subtitle?: string): HTMLElement {
   return el(
@@ -41,7 +41,7 @@ function methodPicker(onChange: (m: Method) => void): { root: HTMLElement; get: 
   const labels: [Method, string][] = [
     ['pin', 'PIN'],
     ['email', 'E-mail'],
-    ['google', 'Google'],
+    ...(googleOffered ? ([['google', 'Google']] as [Method, string][]) : []),
   ];
   const buttons = labels.map(([m, label]) => {
     const b = el(
@@ -390,7 +390,7 @@ function accountLoginCard(): HTMLElement {
   return el(
     'div',
     { class: 'card stack' },
-    separator('nebo účtem'),
+    separator(googleOffered ? 'nebo účtem' : 'nebo e-mailem'),
     googleButton('Pokračovat přes Google'),
     form,
     err,

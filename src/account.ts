@@ -4,6 +4,13 @@
 const URL_BASE = import.meta.env.VITE_SUPABASE_URL as string;
 const KEY = import.meta.env.VITE_SUPABASE_KEY as string;
 
+/**
+ * Přihlášení Googlem je připravené, ale vypnuté. Zapne se nastavením
+ * VITE_GOOGLE_LOGIN=on a zapnutím poskytovatele v Supabase; do té doby
+ * aplikace Google nikde nezmiňuje.
+ */
+export const googleOffered = (import.meta.env.VITE_GOOGLE_LOGIN as string | undefined) === 'on';
+
 export class AuthError extends Error {
   constructor(public code: string) {
     super(code);
@@ -67,6 +74,7 @@ let providersPromise: Promise<{ google: boolean; email: boolean }> | null = null
 
 /** Co má projekt zapnuté. Ptáme se jednou, odpověď je veřejná. */
 export function providers(): Promise<{ google: boolean; email: boolean }> {
+  if (!googleOffered) return Promise.resolve({ google: false, email: true });
   providersPromise ??= fetch(`${URL_BASE}/auth/v1/settings`, { headers: { apikey: KEY } })
     .then((r) => (r.ok ? r.json() : null))
     .then((d: { external?: Record<string, boolean> } | null) => ({
