@@ -388,15 +388,27 @@ function extraSheet(
 ): void {
   const f = giftFields(existing ?? undefined);
   const err = el('div');
+  const OFF_APP = '__mimo__';
   const picker = el('select', { class: 'input' }, el('option', { value: '' }, 'Načítám lidi…'));
+  const offAppName = textInput({ placeholder: 'Jméno, např. babička Marie', maxLength: 40 });
+  const offAppField = field('Kdo to je', offAppName, 'Až se přidá do skupiny, půjde zápis propojit s jeho profilem.');
+  offAppField.hidden = true;
   const needsPicker = !person && !existing;
+  picker.addEventListener('change', () => {
+    offAppField.hidden = picker.value !== OFF_APP;
+    if (!offAppField.hidden) offAppName.focus();
+  });
   if (needsPicker) {
     void api
       .myRecipients(ctx.token)
       .then((people) => {
         clear(picker);
-        mount(picker, el('option', { value: '' }, 'Vyber, komu jsi dárek koupil…'));
-        for (const r of people) mount(picker, el('option', { value: r.id }, r.is_child ? `${r.name} (dítě)` : r.name));
+        mount(
+          picker,
+          el('option', { value: '' }, 'Vyber, komu jsi dárek koupil…'),
+          ...people.map((r) => el('option', { value: r.id }, r.is_child ? `${r.name} (dítě)` : r.name)),
+          el('option', { value: OFF_APP }, 'Někdo, kdo v aplikaci není…'),
+        );
       })
       .catch((e) => {
         clear(err);
@@ -415,15 +427,22 @@ function extraSheet(
           mount(err, errorBox(v.problem ?? 'Zkontroluj údaje.'));
           return;
         }
-        const recipient = person?.id ?? picker.value;
-        if (!existing && !recipient) {
+        const chosen = person?.id ?? picker.value;
+        const offApp = !person && chosen === OFF_APP;
+        if (!existing && !chosen) {
           mount(err, errorBox('Vyber, komu jsi dárek koupil.'));
+          return;
+        }
+        if (offApp && !offAppName.value.trim()) {
+          mount(err, errorBox('Napiš jméno člověka, kterému jsi dárek koupil.'));
+          offAppName.focus();
           return;
         }
         save.disabled = true;
         try {
           if (existing) await api.updateExtraGift(ctx.token, existing.id, v.value);
-          else await api.addExtraGift(ctx.token, recipient, v.value);
+          else if (offApp) await api.addExtraGift(ctx.token, null, offAppName.value, v.value);
+          else await api.addExtraGift(ctx.token, chosen, null, v.value);
           close();
           toast(existing ? 'Upraveno.' : 'Zapsáno do tvých nákupů.');
           await onDone();
@@ -441,6 +460,7 @@ function extraSheet(
     el('p', { class: 'muted small' }, 'Dárek, který v seznamu přání není, ale ty ho máš. Vidíš ho jen ty.'),
     person ? el('p', { class: 'small' }, 'Pro: ', el('strong', {}, person.name)) : null,
     needsPicker ? field('Pro koho', picker) : null,
+    needsPicker ? offAppField : null,
     f.root,
     err,
     el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
@@ -721,11 +741,39 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
             el(
               'div',
               {},
-              el('h3', {}, p.person_name),
+              el(
+                'div',
+                { class: 'row', style: 'gap:8px' },
+                el('h3', {}, p.person_name),
+                p.off_app ? el('span', { class: 'pill grey' }, 'není v aplikaci') : null,
+              ),
               el('div', { class: 'muted small' }, `${giftCount(p.gifts.length + p.extras.length)} · ${tierBreakdown([...p.gifts, ...p.extras])}`),
             ),
-            el('a', { class: 'small', href: `#/osoba/${p.person_id}` }, 'celý seznam'),
+            p.off_app ? null : el('a', { class: 'small', href: `#/osoba/${p.person_id}` }, 'celý seznam'),
           ),
+          p.off_app && p.suggestions.length > 0
+            ? el(
+                'div',
+                { class: 'notice row between' },
+                el('span', {}, 'V aplikaci je ', el('strong', {}, p.suggestions[0].name), '. Je to stejný člověk?'),
+                el(
+                  'button',
+                  {
+                    class: 'btn small',
+                    onClick: async () => {
+                      try {
+                        await api.linkExtraRecipient(ctx.token, p.person_name, p.suggestions[0].id);
+                        toast('Propojeno.');
+                        await load();
+                      } catch (ex) {
+                        toast(errorText(ex), true);
+                      }
+                    },
+                  },
+                  'Propojit',
+                ),
+              )
+            : null,
           ...p.gifts.map((g) =>
             el(
               'div',
@@ -761,6 +809,14 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
             ),
           ),
           ...p.extras.map((e) => extraRow(ctx, e, load)),
+          p.off_app
+            ? el(
+                'div',
+                { class: 'row' },
+                el('button', { class: 'btn ghost small', onClick: () => linkRecipientSheet(ctx, p.person_name, p.suggestions, load) }, 'Propojit s člověkem'),
+                el('button', { class: 'btn ghost small', onClick: () => renameRecipientSheet(ctx, p.person_name, load) }, 'Přejmenovat'),
+              )
+            : null,
         ),
       ),
       addExtra,
@@ -769,6 +825,103 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
   await load();
   main.querySelector('.spinner')?.remove();
   mount(main, body);
+}
+
+/** Propojí jméno zvenčí s člověkem, který se mezitím do skupiny přidal. */
+function linkRecipientSheet(
+  ctx: Ctx,
+  name: string,
+  suggestions: { id: string; name: string }[],
+  onDone: () => Promise<void> | void,
+): void {
+  const picker = el('select', { class: 'input' }, el('option', { value: '' }, 'Načítám lidi…'));
+  const err = el('div');
+  void api
+    .myRecipients(ctx.token)
+    .then((people) => {
+      clear(picker);
+      mount(
+        picker,
+        el('option', { value: '' }, 'Vyber člověka…'),
+        ...people.map((r) =>
+          el('option', { value: r.id, selected: suggestions.some((sg) => sg.id === r.id) }, r.is_child ? `${r.name} (dítě)` : r.name),
+        ),
+      );
+    })
+    .catch((e) => {
+      clear(err);
+      mount(err, errorBox(errorText(e)));
+    });
+
+  const save = el(
+    'button',
+    {
+      class: 'btn',
+      onClick: async () => {
+        clear(err);
+        if (!picker.value) {
+          mount(err, errorBox('Vyber člověka.'));
+          return;
+        }
+        save.disabled = true;
+        try {
+          const r = await api.linkExtraRecipient(ctx.token, name, picker.value);
+          close();
+          toast(`Propojeno, ${giftCount(r.linked)} se přesunul${r.linked === 1 ? '' : 'y'}.`);
+          await onDone();
+        } catch (ex) {
+          mount(err, errorBox(errorText(ex)));
+          save.disabled = false;
+        }
+      },
+    },
+    'Propojit',
+  );
+
+  const close = openSheet([
+    el('h2', {}, `Propojit „${name}“`),
+    el('p', { class: 'muted small' }, 'Dárky zapsané na tohle jméno se přesunou k vybranému člověku. Uvidíš je pak u něj, jemu se dál nezobrazí.'),
+    field('S kým', picker),
+    err,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
+  ]);
+}
+
+/** Oprava jména u člověka mimo aplikaci. */
+function renameRecipientSheet(ctx: Ctx, name: string, onDone: () => Promise<void> | void): void {
+  const input = textInput({ value: name, maxLength: 40 });
+  const err = el('div');
+  const save = el(
+    'button',
+    {
+      class: 'btn',
+      onClick: async () => {
+        clear(err);
+        if (!input.value.trim()) {
+          mount(err, errorBox('Napiš jméno.'));
+          return;
+        }
+        save.disabled = true;
+        try {
+          await api.renameExtraRecipient(ctx.token, name, input.value);
+          close();
+          toast('Přejmenováno.');
+          await onDone();
+        } catch (ex) {
+          mount(err, errorBox(errorText(ex)));
+          save.disabled = false;
+        }
+      },
+    },
+    'Uložit',
+  );
+  const close = openSheet([
+    el('h2', {}, 'Přejmenovat'),
+    field('Jméno', input),
+    err,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
+  ]);
+  setTimeout(() => input.focus(), 50);
 }
 
 // ---------------------------------------------------------------------------
@@ -795,7 +948,9 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
                 el(
                   'div',
                   { class: 'row between' },
-                  el('a', { href: `#/osoba/${p.person_id}`, style: 'font-weight:600' }, p.person_name),
+                  p.off_app
+                    ? el('span', { class: 'row', style: 'gap:6px' }, el('span', { style: 'font-weight:600' }, p.person_name), el('span', { class: 'pill grey' }, 'není v aplikaci'))
+                    : el('a', { href: `#/osoba/${p.person_id}`, style: 'font-weight:600' }, p.person_name),
                   el(
                     'span',
                     { class: 'muted small' },

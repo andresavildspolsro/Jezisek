@@ -30,6 +30,12 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
 - **Dárky mimo seznam** (tabulka `extra_gifts`): co jsem někomu koupil, i když
   si to nepřál. Zapisují se u člověka v oddílu „Mimo seznam“ nebo z Nákupů
   přes výběr osoby. Vidí je **jen kupující**, obdarovanému se nikde nezobrazí.
+- **Lidé mimo aplikaci.** Dárek mimo seznam jde zapsat i na pouhé jméno
+  (`extra_gifts.recipient_name` místo `recipient_id`), takže v přehledu nákupů
+  je i ten, kdo se do aplikace nikdy nepřihlásí. Až se takový člověk do některé
+  mojí skupiny přidá, Nákupy nabídnou propojení (`link_extra_recipient`) a
+  zápisy se přesunou k jeho profilu. Tip na propojení vzniká shodou jména nebo
+  prvního slova jména; jméno jde i opravit (`rename_extra_recipient`).
 - **Nákupy** a karta v záložce **Já** ukazují souhrn: kolik dárků mám pro
   koho, včetně těch mimo seznam, s rozpadem podle cenových hladin. Každý vidí
   jen svoje nákupy.

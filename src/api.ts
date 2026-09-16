@@ -118,7 +118,10 @@ export interface PersonGifts {
 /** Dárek koupený mimo seznam přání. Vidí ho jen ten, kdo ho zapsal. */
 export interface ExtraGift {
   id: string;
-  recipient_id: string;
+  /** Člověk z aplikace, nebo null u někoho, kdo v ní není. */
+  recipient_id: string | null;
+  /** Jméno člověka mimo aplikaci, nebo null u člověka z aplikace. */
+  recipient_name: string | null;
   title: string;
   tier: Tier;
   url: string | null;
@@ -128,8 +131,12 @@ export interface ExtraGift {
 }
 
 export interface Purchase {
-  person_id: string;
+  /** null u člověka, který v aplikaci není. */
+  person_id: string | null;
   person_name: string;
+  off_app: boolean;
+  /** Lidé z mých skupin, kteří by tomuhle jménu mohli odpovídat. */
+  suggestions: { id: string; name: string }[];
   gifts: Gift[];
   extras: ExtraGift[];
 }
@@ -209,10 +216,12 @@ export const api = {
   myPurchases: (token: string) => rpc<Purchase[]>('my_purchases', { p_token: token }),
 
   myRecipients: (token: string) => rpc<Recipient[]>('my_recipients', { p_token: token }),
-  addExtraGift: (token: string, recipient: string, g: GiftInput) =>
+  /** Obdarovaný je buď člověk z aplikace (`recipientId`), nebo jen jméno. */
+  addExtraGift: (token: string, recipientId: string | null, recipientName: string | null, g: GiftInput) =>
     rpc<ExtraGift>('add_extra_gift', {
       p_token: token,
-      p_recipient: recipient,
+      p_recipient: recipientId,
+      p_recipient_name: recipientName,
       p_title: g.title,
       p_tier: g.tier,
       p_url: g.url ?? null,
@@ -229,6 +238,10 @@ export const api = {
     }),
   deleteExtraGift: (token: string, extra: string) =>
     rpc<null>('delete_extra_gift', { p_token: token, p_extra: extra }),
+  linkExtraRecipient: (token: string, name: string, person: string) =>
+    rpc<{ linked: number }>('link_extra_recipient', { p_token: token, p_name: name, p_person: person }),
+  renameExtraRecipient: (token: string, name: string, newName: string) =>
+    rpc<{ renamed: number; name: string }>('rename_extra_recipient', { p_token: token, p_name: name, p_new_name: newName }),
 
   addChild: (token: string, name: string, gifts: GiftInput[]) =>
     rpc<{ id: string; name: string }>('add_child', { p_token: token, p_name: name, p_gifts: gifts }),
@@ -285,7 +298,7 @@ export function errorText(e: unknown): string {
     case 'own_gift':
       return 'Svůj vlastní dárek si koupit nemůžeš.';
     case 'no_recipient':
-      return 'Vyber, komu jsi dárek koupil.';
+      return 'Vyber ze seznamu, nebo napiš jméno člověka mimo aplikaci.';
     case 'already_taken':
       return 'Tento dárek si mezitím vzal někdo jiný.';
     case 'not_yours':
