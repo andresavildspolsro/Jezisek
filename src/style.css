@@ -22,6 +22,11 @@
   box-sizing: border-box;
 }
 
+/* Skrytí přes vlastnost hidden musí přebít display z .row a .stack. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;

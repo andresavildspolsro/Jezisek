@@ -19,9 +19,12 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
   další skupinu s vlastní pozvánkou (třeba pro kolegy, aniž by jim dával
   odkaz na rodinu). Dárky patří člověku, ne skupině, takže všechny skupiny
   vidí stejný seznam a koupený dárek je obsazený všude.
-- **Přihlášení** je jméno + PIN (4 až 6 číslic), jméno je jedinečné v rámci
-  skupiny. Po pěti špatných PINech je účet 15 minut zamčený. Relace platí
-  180 dní.
+- **Přihlášení** je jméno + PIN (4 až 6 číslic), e-mail s heslem, nebo Google.
+  Jméno je jedinečné v rámci skupiny, po pěti špatných PINech je účet 15 minut
+  zamčený, relace platí 180 dní. Účet (Supabase Auth) slouží jen k ověření
+  totožnosti: klient si vyzvedne JWT, vymění ho ve `session_from_auth` za
+  obvyklý token aplikace a dál pracuje po svém. Kdo má PIN, může si účet
+  připojit (`link_auth`) a naopak.
 - **Dárek** má název, cenovou hladinu (do 1 000 Kč / 1 000 až 3 000 Kč /
   nad 3 000 Kč), odkaz a poznámku. Přidávat a upravovat jde kdykoli; smazat
   jen dárek, který ještě nikdo nekoupil.
@@ -50,6 +53,33 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
 - **Správce** (`people.is_admin = true`, nastavuje se ručně v databázi) vidí
   všechny skupiny, může resetovat PIN, smazat člověka nebo skupinu.
 
+## Tisk, stažení a e-mail
+
+Nákupní seznam, přání jednoho člověka i moje vlastní přání se vykreslí do
+jednoho HTML dokumentu (`src/export.ts`), který jde vytisknout, stáhnout nebo
+poslat e-mailem. Seznam přání nikdy nenese informaci o tom, co je koupené,
+takže se dá bez obav poslat dál.
+
+E-maily posílá edge funkce `send-list` přes [Resend](https://resend.com).
+HTML skládá až funkce a všechno escapuje, takže přes aplikaci nejde rozeslat
+cizí obsah; `register_email_send` v databázi navíc hlídá limit 5 zpráv za
+hodinu a 20 za den na člověka.
+
+## Co je potřeba nastavit
+
+V Supabase (projekt `jezisek`):
+
+- **Authentication → URL Configuration**: Site URL na adresu aplikace, do
+  Redirect URLs přidat tutéž adresu. Bez toho se odkazy z e-mailů a návrat
+  od Googlu vrátí jinam.
+- **Authentication → Providers → Google**: zapnout a vložit Client ID a
+  Client Secret z Google Cloud (OAuth 2.0 Client, typ Web application,
+  Authorized redirect URI `https://<projekt>.supabase.co/auth/v1/callback`).
+- **Edge Functions → send-list → Secrets**: `RESEND_API_KEY` z Resendu a
+  `JEZISEK_FROM` ve tvaru `Ježíšek <jezisek@tvojedomena.cz>` s ověřenou
+  doménou. Dokud chybí, tlačítko Poslat e-mailem vrátí srozumitelnou hlášku
+  a zbytek funguje dál.
+
 ## Technika
 
 - Frontend: Vite + TypeScript bez frameworku, jeden HTML soubor, hash router.
@@ -59,7 +89,8 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
   volané anonymním klíčem s tokenem relace v prvním parametru. Pravidlo
   překvapení tak drží databáze, ne prohlížeč: funkce `person_gifts` vrátí
   majiteli seznamu `taken`/`mine` jako `null`.
-- Schéma a funkce: `supabase/migrations/*.sql` (aplikované v pořadí čísel).
+- Schéma a funkce: `supabase/migrations/*.sql` (aplikované v pořadí čísel),
+  odesílání e-mailů: `supabase/functions/send-list/`.
 - Veřejný klíč Supabase v `.env` je určený do prohlížeče; data hlídají funkce
   a oprávnění, ne tajnost klíče.
 

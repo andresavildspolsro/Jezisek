@@ -1,7 +1,7 @@
 // Přihlášená část: lidé ve skupině, seznam jednoho člověka, moje přání,
 // moje nákupy, nastavení a správa.
 
-import { api, errorText, type ExtraGift, type Gift, type GroupRef, type Guardian, type Me, type PersonCard, type Tier } from './api';
+import { api, errorText, sendList, type ExtraGift, type Gift, type GroupRef, type Guardian, type Me, type PersonCard, type Tier } from './api';
 import { session } from './state';
 import {
   clear,
@@ -26,6 +26,7 @@ import {
 } from './ui';
 import { navigate } from './main';
 import { downloadDoc, printDoc, purchasesDoc, wishlistDoc, type ExportDoc } from './export';
+import { authErrorText, googleUrl, pending, signIn, signUp } from './account';
 
 interface Ctx {
   token: string;
@@ -69,6 +70,9 @@ export async function renderApp(root: HTMLElement, parts: string[]): Promise<voi
       break;
     case 'sprava':
       await adminView(main, ctx);
+      break;
+    case 'pozvanka':
+      inviteView(main, ctx);
       break;
     default:
       await peopleView(main, ctx);
@@ -178,6 +182,23 @@ async function logout(token: string): Promise<void> {
   }
   session.end();
   navigate('#/');
+}
+
+/** Kód a odkaz na pozvánku do aktuální skupiny. */
+function inviteView(main: HTMLElement, ctx: Ctx): void {
+  mount(
+    main,
+    el(
+      'div',
+      { class: 'card stack center', style: 'margin-top:8px' },
+      el('span', { style: 'font-size:2.4rem', 'aria-hidden': 'true' }, '🎄'),
+      el('h2', {}, `Skupina „${ctx.group.name}“ je založená`),
+      el('p', { class: 'muted' }, 'Pošli rodině odkaz. Kdo ho otevře, napíše svoje přání a hned vidí ta tvoje.'),
+      el('div', { class: 'code' }, ctx.group.invite_code),
+      el('button', { class: 'btn block', onClick: () => void shareInvite(ctx.group.name, ctx.group.invite_code) }, 'Sdílet pozvánku'),
+      el('a', { class: 'btn secondary block', href: '#/lide' }, 'Pokračovat do aplikace'),
+    ),
+  );
 }
 
 function spinner(text = 'Načítám…'): HTMLElement {
@@ -380,7 +401,7 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
         {
           class: 'btn ghost small',
           onClick: () =>
-            exportSheet('Seznam přání', 'Dokument neobsahuje, co je koupené, takže ho můžeš poslat komukoli dál.', async () => {
+            exportSheet(ctx, 'Seznam přání', 'Dokument neobsahuje, co je koupené, takže ho můžeš poslat komukoli dál.', async () => {
               const fresh = await api.personGifts(ctx.token, personId);
               return wishlistDoc(fresh.person.name, fresh.gifts, false);
             }),
@@ -742,7 +763,7 @@ async function myListView(main: HTMLElement, ctx: Ctx): Promise<void> {
         {
           class: 'btn ghost small',
           onClick: () =>
-            exportSheet('Můj seznam přání', 'Pro někoho, kdo aplikaci nepoužívá. Co je koupené, v dokumentu není.', async () => {
+            exportSheet(ctx, 'Můj seznam přání', 'Pro někoho, kdo aplikaci nepoužívá. Co je koupené, v dokumentu není.', async () => {
               const fresh = await api.personGifts(ctx.token, ctx.me.id);
               return wishlistDoc(ctx.me.name, fresh.gifts, true);
             }),
@@ -883,7 +904,7 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
         {
           class: 'btn ghost small',
           onClick: () =>
-            exportSheet('Nákupní seznam', 'Vytiskni si ho na cestu do obchodu, nebo si ho ulož. Vidí ho jen ty.', async () =>
+            exportSheet(ctx, 'Nákupní seznam', 'Vytiskni si ho na cestu do obchodu, nebo si ho ulož. Vidí ho jen ty.', async () =>
               purchasesDoc(await api.myPurchases(ctx.token)),
             ),
         },
@@ -1115,8 +1136,8 @@ function renameRecipientSheet(ctx: Ctx, name: string, onDone: () => Promise<void
   setTimeout(() => input.focus(), 50);
 }
 
-/** Nabídne stažení nebo tisk hotového seznamu. */
-function exportSheet(title: string, note: string, build: () => Promise<ExportDoc>): void {
+/** Nabídne tisk, stažení nebo odeslání hotového seznamu e-mailem. */
+function exportSheet(ctx: Ctx, title: string, note: string, build: () => Promise<ExportDoc>): void {
   const err = el('div');
   const run = (fn: (doc: ExportDoc) => void) => async (e: Event) => {
     const b = e.currentTarget as HTMLButtonElement;
@@ -1130,11 +1151,47 @@ function exportSheet(title: string, note: string, build: () => Promise<ExportDoc
       b.disabled = false;
     }
   };
+
+  const address = textInput({ type: 'email', value: ctx.me.email ?? '', placeholder: 'komu@email.cz', maxLength: 120 });
+  const mailBox = el('div', { class: 'stack' }, field('Poslat na adresu', address));
+  mailBox.hidden = true;
+  const mail = el(
+    'button',
+    {
+      class: 'btn secondary block',
+      onClick: async () => {
+        clear(err);
+        if (mailBox.hidden) {
+          mailBox.hidden = false;
+          setTimeout(() => address.focus(), 30);
+          return;
+        }
+        if (!address.value.includes('@')) {
+          mount(err, errorBox('Zkontroluj e-mailovou adresu.'));
+          return;
+        }
+        mail.disabled = true;
+        try {
+          const doc = await build();
+          const r = await sendList(ctx.token, address.value.trim(), doc);
+          close();
+          toast(`Odesláno na ${r.to}.`);
+        } catch (ex) {
+          mount(err, errorBox(errorText(ex)));
+          mail.disabled = false;
+        }
+      },
+    },
+    'Poslat e-mailem',
+  );
+
   const close = openSheet([
     el('h2', {}, title),
     el('p', { class: 'muted small' }, note),
     el('button', { class: 'btn block', onClick: run(printDoc) }, 'Vytisknout nebo uložit PDF'),
     el('button', { class: 'btn secondary block', onClick: run(downloadDoc) }, 'Stáhnout soubor'),
+    mailBox,
+    mail,
     err,
     el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn ghost', onClick: () => close() }, 'Zpět')),
   ]);
@@ -1194,6 +1251,7 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
 
   mount(main, 
     el('h2', {}, ctx.me.name),
+    accountCard(ctx),
     purchasesCard,
     el(
       'div',
@@ -1296,7 +1354,7 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
           if (!/^[0-9]{4,6}$/.test(newPin.value)) return pinErr.appendChild(errorBox('Nový PIN musí mít 4 až 6 číslic.'));
           if (newPin.value !== newPin2.value) return pinErr.appendChild(errorBox('Nové PINy se neshodují.'));
           try {
-            await api.changePin(ctx.token, oldPin.value, newPin.value);
+            await api.changePin(ctx.token, ctx.me.has_pin ? oldPin.value : '', newPin.value);
             toast('PIN změněn.');
             oldPin.value = newPin.value = newPin2.value = '';
           } catch (ex) {
@@ -1304,14 +1362,132 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
           }
         },
       },
-      el('h3', {}, 'Změna PINu'),
-      field('Současný PIN', oldPin),
+      el('h3', {}, ctx.me.has_pin ? 'Změna PINu' : 'Nastavit PIN'),
+      ctx.me.has_pin
+        ? field('Současný PIN', oldPin)
+        : el('p', { class: 'muted small' }, 'Zatím se přihlašuješ účtem. S PINem se dostaneš dovnitř i bez e-mailu.'),
       el('div', { class: 'row' }, el('div', { class: 'grow' }, field('Nový PIN', newPin)), el('div', { class: 'grow' }, field('Nový PIN znovu', newPin2))),
       pinErr,
-      el('button', { class: 'btn secondary', type: 'submit' }, 'Změnit PIN'),
+      el('button', { class: 'btn secondary', type: 'submit' }, ctx.me.has_pin ? 'Změnit PIN' : 'Nastavit PIN'),
     ),
     ctx.me.is_admin ? el('a', { class: 'btn secondary block', href: '#/sprava' }, 'Správa aplikace') : null,
     el('button', { class: 'btn danger block', onClick: () => logout(ctx.token) }, 'Odhlásit se'),
+  );
+}
+
+/** Připojení e-mailu nebo Googlu ke stávajícímu profilu. */
+function accountCard(ctx: Ctx): HTMLElement {
+  const err = el('div');
+  const email = textInput({ type: 'email', placeholder: 'tvuj@email.cz', autocomplete: 'email', maxLength: 120 });
+  const password = textInput({ type: 'password', placeholder: 'Heslo (aspoň 6 znaků)', autocomplete: 'new-password', maxLength: 72 });
+  const form = el('div', { class: 'stack' }, email, password);
+  form.hidden = true;
+
+  const connect = el(
+    'button',
+    {
+      class: 'btn secondary block',
+      onClick: async () => {
+        clear(err);
+        if (form.hidden) {
+          form.hidden = false;
+          setTimeout(() => email.focus(), 30);
+          return;
+        }
+        if (!email.value.includes('@') || password.value.length < 6) {
+          mount(err, errorBox('Zkontroluj e-mail a heslo (aspoň 6 znaků).'));
+          return;
+        }
+        connect.disabled = true;
+        pending.set({ kind: 'link' });
+        try {
+          const { jwt } = await signUp(email.value, password.value);
+          if (jwt) {
+            await finishLink(jwt);
+            return;
+          }
+          clear(err);
+          mount(err, el('div', { class: 'notice' }, `Poslali jsme ti e-mail na ${email.value.trim()}. Odkazem v něm účet připojíš.`));
+        } catch (ex) {
+          // Když už účet existuje, zkusíme rovnou přihlášení.
+          try {
+            const jwt = await signIn(email.value, password.value);
+            await finishLink(jwt);
+            return;
+          } catch {
+            pending.clear();
+            mount(err, errorBox(authErrorText(ex)));
+            connect.disabled = false;
+          }
+        }
+      },
+    },
+    'Připojit e-mail',
+  );
+
+  const finishLink = async (jwt: string) => {
+    try {
+      await api.linkAuth(jwt, ctx.token);
+      pending.clear();
+      toast('Účet je připojený.');
+      navigate('#/ja');
+    } catch (ex) {
+      pending.clear();
+      mount(err, errorBox(errorText(ex)));
+      connect.disabled = false;
+    }
+  };
+
+  if (ctx.me.has_account) {
+    return el(
+      'div',
+      { class: 'card stack' },
+      el('h3', {}, 'Přihlašování'),
+      el('div', { class: 'row between' }, el('span', {}, ctx.me.email ?? 'Účet připojený'), el('span', { class: 'pill' }, 'účet')),
+      ctx.me.has_pin ? el('p', { class: 'muted small' }, 'Přihlásit se můžeš účtem i PINem.') : el('p', { class: 'muted small' }, 'Přihlašuješ se jen účtem.'),
+      err,
+      el(
+        'button',
+        {
+          class: 'btn ghost small',
+          style: 'align-self:flex-start;color:var(--red)',
+          onClick: async () => {
+            clear(err);
+            if (!(await confirmSheet('Odpojit účet?', 'Přihlašovat se pak budeš jen jménem a PINem.', 'Odpojit', true))) return;
+            try {
+              await api.unlinkAuth(ctx.token);
+              toast('Účet odpojen.');
+              navigate('#/ja');
+            } catch (ex) {
+              mount(err, errorBox(errorText(ex)));
+            }
+          },
+        },
+        'Odpojit účet',
+      ),
+    );
+  }
+
+  return el(
+    'div',
+    { class: 'card stack' },
+    el('h3', {}, 'Přihlašování'),
+    el('p', { class: 'muted small' }, 'Teď se přihlašuješ jménem a PINem. Připoj si e-mail nebo Google a půjde to i bez PINu.'),
+    el(
+      'button',
+      {
+        class: 'btn light block',
+        style: 'border:1px solid var(--line)',
+        onClick: () => {
+          pending.set({ kind: 'link' });
+          location.href = googleUrl();
+        },
+      },
+      'Připojit Google',
+    ),
+    form,
+    err,
+    connect,
   );
 }
 

@@ -10,15 +10,18 @@ export class ApiError extends Error {
   }
 }
 
-/** Zavolá databázovou funkci. Chybu vrací jako ApiError s kódem z databáze. */
-export async function rpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
+/**
+ * Zavolá databázovou funkci. Chybu vrací jako ApiError s kódem z databáze.
+ * `jwt` se použije u funkcí, které pracují s přihlášeným účtem.
+ */
+export async function rpc<T>(fn: string, params: Record<string, unknown>, jwt?: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${URL}/rest/v1/rpc/${fn}`, {
       method: 'POST',
       headers: {
         apikey: KEY,
-        Authorization: `Bearer ${KEY}`,
+        Authorization: `Bearer ${jwt ?? KEY}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -88,6 +91,10 @@ export interface Me {
   id: string;
   name: string;
   is_admin: boolean;
+  /** E-mail připojeného účtu, nebo null u přihlášení PINem. */
+  email: string | null;
+  has_pin: boolean;
+  has_account: boolean;
   groups: GroupRef[];
   children: { id: string; name: string; guardians: Guardian[] }[];
 }
@@ -96,7 +103,7 @@ export interface GroupPreview {
   id: string;
   name: string;
   invite_code: string;
-  members: { id: string; name: string }[];
+  members: { id: string; name: string; has_pin: boolean }[];
 }
 
 export interface PersonCard {
@@ -190,6 +197,16 @@ export const api = {
     rpc<SessionResult>('login', { p_code: code, p_name: name, p_pin: pin }),
   logout: (token: string) => rpc<null>('logout', { p_token: token }),
 
+  // Účet (Supabase Auth): volá se s JWT místo anonymního klíče.
+  sessionFromAuth: (jwt: string) =>
+    rpc<{ needs_profile: boolean; email: string | null; token?: string; group_id?: string }>('session_from_auth', {}, jwt),
+  registerWithAuth: (jwt: string, code: string, name: string, gifts: GiftInput[]) =>
+    rpc<SessionResult>('register_with_auth', { p_code: code, p_name: name, p_gifts: gifts }, jwt),
+  createGroupWithAuth: (jwt: string, groupName: string, name: string, gifts: GiftInput[]) =>
+    rpc<SessionResult>('create_group_with_auth', { p_group_name: groupName, p_name: name, p_gifts: gifts }, jwt),
+  linkAuth: (jwt: string, token: string) => rpc<{ email: string | null }>('link_auth', { p_token: token }, jwt),
+  unlinkAuth: (token: string) => rpc<null>('unlink_auth', { p_token: token }),
+
   me: (token: string) => rpc<Me>('me', { p_token: token }),
   createGroupAsMember: (token: string, groupName: string) =>
     rpc<GroupRef & { group_id: string }>('create_group_as_member', { p_token: token, p_group_name: groupName }),
@@ -271,6 +288,27 @@ export const api = {
     rpc<null>('admin_delete_group', { p_token: token, p_group: group }),
 };
 
+/** Pošle hotový dokument e-mailem přes edge funkci send-list. */
+export async function sendList(
+  token: string,
+  to: string | null,
+  doc: { title: string; intro: string; sections: unknown[] },
+): Promise<{ to: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${URL}/functions/v1/send-list`, {
+      method: 'POST',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, to, doc }),
+    });
+  } catch {
+    throw new ApiError('network', 0);
+  }
+  const data = (await res.json().catch(() => null)) as { error?: string; to?: string } | null;
+  if (!res.ok) throw new ApiError(data?.error ?? 'send_failed', res.status);
+  return { to: data?.to ?? '' };
+}
+
 /** Lidsky srozumitelná hláška ke kódu chyby z databáze. */
 export function errorText(e: unknown): string {
   const code = e instanceof ApiError ? e.code : 'server';
@@ -314,6 +352,18 @@ export function errorText(e: unknown): string {
       return 'Vyber ze seznamu, nebo napiš jméno člověka mimo aplikaci.';
     case 'already_taken':
       return 'Tento dárek si mezitím vzal někdo jiný.';
+    case 'email_not_configured':
+      return 'Odesílání e-mailů zatím není nastavené. Seznam si zatím stáhni.';
+    case 'email_rate_limit':
+      return 'Dnes už jsi poslal hodně e-mailů. Zkus to za chvíli.';
+    case 'email_invalid':
+      return 'Zkontroluj e-mailovou adresu.';
+    case 'send_failed':
+      return 'E-mail se nepodařilo odeslat. Zkus to prosím znovu.';
+    case 'account_taken':
+      return 'Tenhle účet už patří k jinému profilu.';
+    case 'need_pin_first':
+      return 'Nejdřív si nastav PIN, jinak by ses neměl jak přihlásit.';
     case 'last_guardian':
       return 'Poslední rodič odebrat nejde. Buď přidej druhého, nebo dítě rovnou odeber ze seznamu.';
     case 'not_yours':

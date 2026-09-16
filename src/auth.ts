@@ -10,12 +10,14 @@ import {
   field,
   giftListEditor,
   inviteLink,
+  mount,
   pinInput,
   shareInvite,
   textInput,
   toast,
 } from './ui';
-import { navigate } from './main';
+import { navigate, resolveAccount } from './main';
+import { authErrorText, googleUrl, heldAccount, pending, sendRecovery, signIn, signUp } from './account';
 
 function hero(title: string, subtitle?: string): HTMLElement {
   return el(
@@ -29,6 +31,69 @@ function hero(title: string, subtitle?: string): HTMLElement {
       subtitle ? el('p', {}, subtitle) : null,
     ),
   );
+}
+
+/** Jak se člověk bude přihlašovat. */
+type Method = 'pin' | 'email' | 'google';
+
+function methodPicker(onChange: (m: Method) => void): { root: HTMLElement; get: () => Method } {
+  let value: Method = 'pin';
+  const labels: [Method, string][] = [
+    ['pin', 'PIN'],
+    ['email', 'E-mail'],
+    ['google', 'Google'],
+  ];
+  const buttons = labels.map(([m, label]) =>
+    el(
+      'button',
+      {
+        type: 'button',
+        role: 'tab',
+        'aria-selected': String(value === m),
+        onClick: () => {
+          value = m;
+          buttons.forEach((b, i) => b.setAttribute('aria-selected', String(labels[i][0] === m)));
+          onChange(m);
+        },
+      },
+      label,
+    ),
+  );
+  return { root: el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Způsob přihlášení' }, ...buttons), get: () => value };
+}
+
+function googleButton(label: string, before?: () => void): HTMLElement {
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'btn light block',
+      style: 'border-color:var(--line);border-width:1px',
+      onClick: () => {
+        before?.();
+        location.href = googleUrl();
+      },
+    },
+    el('span', { 'aria-hidden': 'true' }, 'G'),
+    label,
+  );
+}
+
+function separator(text: string): HTMLElement {
+  return el('div', { class: 'muted small center' }, text);
+}
+
+function emailField(): HTMLInputElement {
+  return textInput({ type: 'email', placeholder: 'tvuj@email.cz', autocomplete: 'email', maxLength: 120 });
+}
+
+function passwordField(neu = false): HTMLInputElement {
+  return textInput({
+    type: 'password',
+    placeholder: neu ? 'Aspoň 6 znaků' : 'Heslo',
+    autocomplete: neu ? 'new-password' : 'current-password',
+    maxLength: 72,
+  });
 }
 
 function codeFromInput(v: string): string {
@@ -242,45 +307,190 @@ function loginForm(preview: GroupPreview, code: string): HTMLElement {
   };
   const btn = el('button', { class: 'btn block', type: 'submit' }, 'Přihlásit se');
   return el(
-    'form',
-    { class: 'card stack', onSubmit: submit },
-    field('Kdo jsi', select),
-    field('PIN', pin),
+    'div',
+    { class: 'stack' },
+    el(
+      'form',
+      { class: 'card stack', onSubmit: submit },
+      field('Kdo jsi', select),
+      field('PIN', pin),
+      err,
+      btn,
+      el('p', { class: 'muted small center' }, 'Zapomenutý PIN ti může nastavit správce aplikace.'),
+    ),
+    accountLoginCard(),
+  );
+}
+
+/** Přihlášení účtem: e-mailem s heslem, nebo Googlem. */
+function accountLoginCard(): HTMLElement {
+  const err = el('div');
+  const email = emailField();
+  const password = passwordField();
+  const form = el('div', { class: 'stack' }, field('E-mail', email), field('Heslo', password));
+  form.hidden = true;
+
+  const btn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'btn secondary block',
+      onClick: async () => {
+        clear(err);
+        if (form.hidden) {
+          // Popisek zůstává stejný, ať se neplete s přihlášením PINem.
+          form.hidden = false;
+          setTimeout(() => email.focus(), 30);
+          return;
+        }
+        if (!email.value.trim() || !password.value) {
+          mount(err, errorBox('Vyplň e-mail i heslo.'));
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const jwt = await signIn(email.value, password.value);
+          await resolveAccount(jwt);
+        } catch (ex) {
+          mount(err, errorBox(authErrorText(ex)));
+          btn.disabled = false;
+        }
+      },
+    },
+    'Přihlásit se e-mailem',
+  );
+
+  const forgot = el(
+    'button',
+    {
+      type: 'button',
+      class: 'btn ghost small',
+      onClick: async () => {
+        clear(err);
+        if (!email.value.trim()) {
+          form.hidden = false;
+          mount(err, errorBox('Nejdřív napiš svůj e-mail.'));
+          email.focus();
+          return;
+        }
+        try {
+          await sendRecovery(email.value);
+          toast('Poslali jsme ti odkaz na nové heslo.');
+        } catch (ex) {
+          mount(err, errorBox(authErrorText(ex)));
+        }
+      },
+    },
+    'Zapomenuté heslo',
+  );
+
+  return el(
+    'div',
+    { class: 'card stack' },
+    separator('nebo účtem'),
+    googleButton('Pokračovat přes Google'),
+    form,
     err,
     btn,
-    el('p', { class: 'muted small center' }, 'Zapomenutý PIN ti může nastavit správce aplikace.'),
+    forgot,
   );
 }
 
 function registerForm(preview: GroupPreview, code: string): HTMLElement {
   const err = el('div');
   const name = textInput({ placeholder: 'Jak ti ostatní říkají', autocomplete: 'name', maxLength: 40 });
+  const gifts = giftListEditor(3);
+  const held = heldAccount.get();
+
   const pin = pinInput({ autocomplete: 'new-password' });
   const pin2 = pinInput({ autocomplete: 'new-password' });
-  const gifts = giftListEditor(3);
+  const email = emailField();
+  const password = passwordField(true);
+
+  const pinBox = el(
+    'div',
+    { class: 'stack' },
+    el('div', { class: 'row' }, el('div', { class: 'grow' }, field('PIN (4 až 6 číslic)', pin)), el('div', { class: 'grow' }, field('PIN znovu', pin2))),
+    el('p', { class: 'muted small' }, 'PINem se budeš přihlašovat. Nepoužívej PIN od karty.'),
+  );
+  const emailBox = el(
+    'div',
+    { class: 'stack' },
+    field('E-mail', email),
+    field('Heslo', password, 'Aspoň 6 znaků. Na e-mail si pak můžeš posílat seznamy.'),
+  );
+  const googleBox = el('p', { class: 'muted small' }, 'Přesměrujeme tě na Google a pak se sem vrátíš. Přání máš mezitím uložená.');
+  emailBox.hidden = true;
+  googleBox.hidden = true;
+
   const btn = el('button', { class: 'btn block', type: 'submit' }, 'Vytvořit můj seznam');
+  const picker = methodPicker((m) => {
+    pinBox.hidden = m !== 'pin';
+    emailBox.hidden = m !== 'email';
+    googleBox.hidden = m !== 'google';
+    btn.textContent = m === 'google' ? 'Pokračovat přes Google' : 'Vytvořit můj seznam';
+  });
+
+  const fail = (msg: string, focus?: HTMLElement) => {
+    mount(err, errorBox(msg));
+    err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    focus?.focus();
+  };
 
   const submit = async (e: Event) => {
     e.preventDefault();
     clear(err);
-    const fail = (msg: string, focus?: HTMLElement) => {
-      err.appendChild(errorBox(msg));
-      err.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      focus?.focus();
-    };
     if (!name.value.trim()) return fail('Napiš svoje jméno.', name);
-    if (!/^[0-9]{4,6}$/.test(pin.value)) return fail('PIN musí mít 4 až 6 číslic.', pin);
-    if (pin.value !== pin2.value) return fail('PINy se neshodují.', pin2);
     const g = gifts.read();
     if (!g.ok) return fail(g.problem ?? 'Zkontroluj dárky.');
+    const method: Method = held ? 'email' : picker.get();
+
+    if (!held && method === 'pin') {
+      if (!/^[0-9]{4,6}$/.test(pin.value)) return fail('PIN musí mít 4 až 6 číslic.', pin);
+      if (pin.value !== pin2.value) return fail('PINy se neshodují.', pin2);
+    }
+    if (!held && method === 'email') {
+      if (!email.value.includes('@')) return fail('Zkontroluj e-mail.', email);
+      if (password.value.length < 6) return fail('Heslo musí mít aspoň 6 znaků.', password);
+    }
+
     btn.disabled = true;
     try {
-      const r = await api.register(code, name.value, pin.value, g.gifts);
-      session.start(r.token, r.group_id, code);
-      toast('Seznam je uložený. Vítej!');
-      navigate('#/lide');
+      if (held) {
+        const r = await api.registerWithAuth(held.jwt, code, name.value, g.gifts);
+        heldAccount.clear();
+        session.start(r.token, r.group_id, code);
+        toast('Seznam je uložený. Vítej!');
+        navigate('#/lide');
+        return;
+      }
+      if (method === 'pin') {
+        const r = await api.register(code, name.value, pin.value, g.gifts);
+        session.start(r.token, r.group_id, code);
+        toast('Seznam je uložený. Vítej!');
+        navigate('#/lide');
+        return;
+      }
+      // Účet: přání si schováme a dokončíme registraci po ověření.
+      pending.set({ kind: 'register', code, name: name.value, gifts: g.gifts });
+      if (method === 'google') {
+        location.href = googleUrl();
+        return;
+      }
+      const { jwt } = await signUp(email.value, password.value);
+      if (jwt) {
+        await resolveAccount(jwt);
+      } else {
+        clear(err);
+        mount(
+          err,
+          el('div', { class: 'notice' }, `Poslali jsme ti e-mail na ${email.value.trim()}. Klepni v něm na odkaz a seznam se uloží.`),
+        );
+        btn.disabled = true;
+      }
     } catch (ex) {
-      fail(errorText(ex));
+      pending.clear();
+      fail(ex instanceof ApiError ? errorText(ex) : authErrorText(ex));
       btn.disabled = false;
     }
   };
@@ -293,8 +503,9 @@ function registerForm(preview: GroupPreview, code: string): HTMLElement {
       { class: 'card stack' },
       el('h2', {}, 'O tobě'),
       field('Jméno', name, `Musí být ve skupině „${preview.name}“ jedinečné.`),
-      el('div', { class: 'row' }, el('div', { class: 'grow' }, field('PIN (4 až 6 číslic)', pin)), el('div', { class: 'grow' }, field('PIN znovu', pin2))),
-      el('p', { class: 'muted small' }, 'PINem se budeš přihlašovat. Nepoužívej PIN od karty.'),
+      held
+        ? el('div', { class: 'notice' }, `Jsi přihlášený jako ${held.email ?? 'účet'}. Zbývá napsat jméno a přání.`)
+        : el('div', { class: 'stack' }, el('span', { class: 'hint' }, 'Jak se budeš přihlašovat'), picker.root, pinBox, emailBox, googleBox),
     ),
     el(
       'div',
@@ -322,9 +533,29 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
   const name = textInput({ placeholder: 'Jak ti ostatní říkají', autocomplete: 'name', maxLength: 40 });
   const pin = pinInput({ autocomplete: 'new-password' });
   const pin2 = pinInput({ autocomplete: 'new-password' });
+  const email = emailField();
+  const password = passwordField(true);
   const gifts = giftListEditor(3);
   const btn = el('button', { class: 'btn block', type: 'submit' }, 'Založit skupinu');
   const main = el('main', { class: 'wrap plain' });
+  const held = heldAccount.get();
+
+  const pinBox = el(
+    'div',
+    { class: 'row' },
+    el('div', { class: 'grow' }, field('PIN (4 až 6 číslic)', pin)),
+    el('div', { class: 'grow' }, field('PIN znovu', pin2)),
+  );
+  const emailBox = el('div', { class: 'stack' }, field('E-mail', email), field('Heslo', password, 'Aspoň 6 znaků.'));
+  const googleBox = el('p', { class: 'muted small' }, 'Přesměrujeme tě na Google a pak se sem vrátíš.');
+  emailBox.hidden = true;
+  googleBox.hidden = true;
+  const picker = methodPicker((m) => {
+    pinBox.hidden = m !== 'pin';
+    emailBox.hidden = m !== 'email';
+    googleBox.hidden = m !== 'google';
+    btn.textContent = m === 'google' ? 'Pokračovat přes Google' : 'Založit skupinu';
+  });
 
   const submit = async (e: Event) => {
     e.preventDefault();
@@ -336,12 +567,44 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
     };
     if (!groupName.value.trim()) return fail('Pojmenuj skupinu.', groupName);
     if (!name.value.trim()) return fail('Napiš svoje jméno.', name);
-    if (!/^[0-9]{4,6}$/.test(pin.value)) return fail('PIN musí mít 4 až 6 číslic.', pin);
-    if (pin.value !== pin2.value) return fail('PINy se neshodují.', pin2);
     const g = gifts.read();
     if (!g.ok) return fail(g.problem ?? 'Zkontroluj dárky.');
+    const method: Method = held ? 'email' : picker.get();
+    if (!held && method === 'pin') {
+      if (!/^[0-9]{4,6}$/.test(pin.value)) return fail('PIN musí mít 4 až 6 číslic.', pin);
+      if (pin.value !== pin2.value) return fail('PINy se neshodují.', pin2);
+    }
+    if (!held && method === 'email') {
+      if (!email.value.includes('@')) return fail('Zkontroluj e-mail.', email);
+      if (password.value.length < 6) return fail('Heslo musí mít aspoň 6 znaků.', password);
+    }
+
     btn.disabled = true;
     try {
+      if (held || method !== 'pin') {
+        if (held) {
+          const r = await api.createGroupWithAuth(held.jwt, groupName.value, name.value, g.gifts);
+          heldAccount.clear();
+          session.start(r.token, r.group_id, r.invite_code);
+          clear(main);
+          main.append(successCard(groupName.value.trim(), r.invite_code as string));
+          window.scrollTo(0, 0);
+          return;
+        }
+        pending.set({ kind: 'create', groupName: groupName.value, name: name.value, gifts: g.gifts });
+        if (method === 'google') {
+          location.href = googleUrl();
+          return;
+        }
+        const { jwt } = await signUp(email.value, password.value);
+        if (jwt) {
+          await resolveAccount(jwt);
+        } else {
+          clear(err);
+          mount(err, el('div', { class: 'notice' }, `Poslali jsme ti e-mail na ${email.value.trim()}. Klepni v něm na odkaz a skupina se založí.`));
+        }
+        return;
+      }
       const r = await api.createGroup(groupName.value, name.value, pin.value, g.gifts);
       const code = r.invite_code as string;
       session.start(r.token, r.group_id, code);
@@ -349,7 +612,8 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
       main.append(successCard(groupName.value.trim(), code));
       window.scrollTo(0, 0);
     } catch (ex) {
-      fail(errorText(ex));
+      pending.clear();
+      fail(ex instanceof ApiError ? errorText(ex) : authErrorText(ex));
       btn.disabled = false;
     }
   };
@@ -369,7 +633,9 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
         { class: 'card stack' },
         el('h2', {}, 'O tobě'),
         field('Jméno', name),
-        el('div', { class: 'row' }, el('div', { class: 'grow' }, field('PIN (4 až 6 číslic)', pin)), el('div', { class: 'grow' }, field('PIN znovu', pin2))),
+        held
+          ? el('div', { class: 'notice' }, `Jsi přihlášený jako ${held.email ?? 'účet'}.`)
+          : el('div', { class: 'stack' }, el('span', { class: 'hint' }, 'Jak se budeš přihlašovat'), picker.root, pinBox, emailBox, googleBox),
       ),
       el(
         'div',
