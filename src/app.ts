@@ -1,7 +1,7 @@
 // Přihlášená část: lidé ve skupině, seznam jednoho člověka, moje přání,
 // moje nákupy, nastavení a správa.
 
-import { api, errorText, type Gift, type GroupRef, type Me, type PersonCard } from './api';
+import { api, errorText, type ExtraGift, type Gift, type GroupRef, type Me, type PersonCard, type Tier } from './api';
 import { session } from './state';
 import {
   clear,
@@ -264,11 +264,33 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
   const canEdit = p.managed_by_me;
 
   const list = el('div', { class: 'stack' });
+  const extrasBox = el('div', { class: 'stack' });
   const refresh = async () => {
     const fresh = await api.personGifts(ctx.token, personId);
     clear(list);
     renderGifts(fresh.gifts);
-    summary.textContent = summaryText(fresh.gifts);
+    renderExtras(fresh.extras);
+    summary.textContent = summaryText(fresh.gifts, fresh.extras);
+  };
+  const renderExtras = (extras: ExtraGift[]) => {
+    clear(extrasBox);
+    mount(
+      extrasBox,
+      el(
+        'div',
+        { class: 'section-title' },
+        el('h3', {}, 'Mimo seznam'),
+        el('span', { class: 'pill gold' }, 'vidíš jen ty'),
+      ),
+      extras.length === 0
+        ? el('p', { class: 'muted small' }, 'Máš navíc něco, co v seznamu přání není? Zapiš si to, ať máš přehled o všech dárcích. Nikdo jiný to neuvidí.')
+        : el('div', { class: 'stack' }, ...extras.map((e) => extraRow(ctx, e, refresh, false))),
+      el(
+        'button',
+        { class: 'btn secondary block', onClick: () => extraSheet(ctx, { id: p.id, name: p.name }, null, refresh) },
+        '+ Přidat dárek mimo seznam',
+      ),
+    );
   };
   const renderGifts = (gifts: Gift[]) => {
     if (gifts.length === 0) {
@@ -277,17 +299,17 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
     }
     for (const g of gifts) list.appendChild(giftRow(ctx, g, { claimable: true, editable: canEdit, ownerId: personId, onChange: refresh }));
   };
-  const summaryText = (gifts: Gift[]) => {
+  const summaryText = (gifts: Gift[], extras: ExtraGift[]) => {
     const n = gifts.length;
     const t = gifts.filter((g) => g.taken).length;
-    const mine = gifts.filter((g) => g.mine).length;
-    if (n === 0) return '';
-    const base = t === 0 ? `${n} ${plural(n, 'přání', 'přání', 'přání')}, zatím nic není koupené.` : `${t} z ${n} přání už má kupce.`;
+    const mine = gifts.filter((g) => g.mine).length + extras.length;
+    const base = n === 0 ? 'Zatím bez přání.' : t === 0 ? `${n} ${plural(n, 'přání', 'přání', 'přání')}, zatím nic není koupené.` : `${t} z ${n} přání už má kupce.`;
     return mine > 0 ? `${base} Od tebe přinese Ježíšek ${mine} ${plural(mine, 'dárek', 'dárky', 'dárků')}.` : base;
   };
-  const summary = el('p', { class: 'muted small' }, summaryText(data.gifts));
+  const summary = el('p', { class: 'muted small' }, summaryText(data.gifts, data.extras));
 
   renderGifts(data.gifts);
+  renderExtras(data.extras);
 
   mount(main, 
     el('a', { class: 'btn ghost small', href: '#/lide', style: 'align-self:flex-start' }, '‹ Lidé'),
@@ -302,7 +324,128 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
     canEdit
       ? el('button', { class: 'btn secondary block', onClick: () => giftSheet(ctx, personId, null, refresh) }, '+ Přidat přání')
       : null,
+    extrasBox,
   );
+}
+
+/** Karta dárku mimo seznam. Zobrazuje se jen tomu, kdo ho zapsal. */
+function extraRow(ctx: Ctx, e: ExtraGift, onChange: () => Promise<void> | void, badge = true): HTMLElement {
+  return el(
+    'div',
+    { class: 'card tight gift' },
+    el(
+      'div',
+      { class: 'body' },
+      el('div', { class: 'title' }, e.title),
+      el(
+        'div',
+        { class: 'meta' },
+        tierPill(e.tier),
+        badge ? el('span', { class: 'pill gold' }, 'mimo seznam') : null,
+        e.url ? el('a', { class: 'link-out', href: e.url, target: '_blank', rel: 'noopener noreferrer' }, `${hostOf(e.url)} ↗`) : null,
+      ),
+      e.note ? el('div', { class: 'note' }, e.note) : null,
+    ),
+    el(
+      'div',
+      { class: 'actions' },
+      el(
+        'div',
+        { class: 'row', style: 'gap:2px' },
+        el('button', { class: 'btn ghost small', onClick: () => extraSheet(ctx, null, e, onChange) }, 'Upravit'),
+        el(
+          'button',
+          {
+            class: 'btn ghost small',
+            style: 'color:var(--red)',
+            onClick: async () => {
+              if (!(await confirmSheet('Smazat poznámku?', `„${e.title}“ zmizí z tvého přehledu nákupů.`, 'Smazat', true))) return;
+              try {
+                await api.deleteExtraGift(ctx.token, e.id);
+                toast('Smazáno.');
+                await onChange();
+              } catch (ex) {
+                toast(errorText(ex), true);
+              }
+            },
+          },
+          'Smazat',
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Dialog pro dárek mimo seznam. `person` předvyplní obdarovaného, jinak se
+ * nabídne výběr; `existing` přepne dialog na úpravu.
+ */
+function extraSheet(
+  ctx: Ctx,
+  person: { id: string; name: string } | null,
+  existing: ExtraGift | null,
+  onDone: () => Promise<void> | void,
+): void {
+  const f = giftFields(existing ?? undefined);
+  const err = el('div');
+  const picker = el('select', { class: 'input' }, el('option', { value: '' }, 'Načítám lidi…'));
+  const needsPicker = !person && !existing;
+  if (needsPicker) {
+    void api
+      .myRecipients(ctx.token)
+      .then((people) => {
+        clear(picker);
+        mount(picker, el('option', { value: '' }, 'Vyber, komu jsi dárek koupil…'));
+        for (const r of people) mount(picker, el('option', { value: r.id }, r.is_child ? `${r.name} (dítě)` : r.name));
+      })
+      .catch((e) => {
+        clear(err);
+        mount(err, errorBox(errorText(e)));
+      });
+  }
+
+  const save = el(
+    'button',
+    {
+      class: 'btn',
+      onClick: async () => {
+        clear(err);
+        const v = f.read();
+        if (!v.ok || !v.value) {
+          mount(err, errorBox(v.problem ?? 'Zkontroluj údaje.'));
+          return;
+        }
+        const recipient = person?.id ?? picker.value;
+        if (!existing && !recipient) {
+          mount(err, errorBox('Vyber, komu jsi dárek koupil.'));
+          return;
+        }
+        save.disabled = true;
+        try {
+          if (existing) await api.updateExtraGift(ctx.token, existing.id, v.value);
+          else await api.addExtraGift(ctx.token, recipient, v.value);
+          close();
+          toast(existing ? 'Upraveno.' : 'Zapsáno do tvých nákupů.');
+          await onDone();
+        } catch (ex) {
+          mount(err, errorBox(errorText(ex)));
+          save.disabled = false;
+        }
+      },
+    },
+    existing ? 'Uložit' : 'Zapsat',
+  );
+
+  const close = openSheet([
+    el('h2', {}, existing ? 'Upravit dárek mimo seznam' : 'Dárek mimo seznam'),
+    el('p', { class: 'muted small' }, 'Dárek, který v seznamu přání není, ale ty ho máš. Vidíš ho jen ty.'),
+    person ? el('p', { class: 'small' }, 'Pro: ', el('strong', {}, person.name)) : null,
+    needsPicker ? field('Pro koho', picker) : null,
+    f.root,
+    err,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
+  ]);
+  setTimeout(() => (needsPicker ? picker.focus() : f.focus()), 50);
 }
 
 interface GiftRowOpts {
@@ -524,10 +667,16 @@ function addChildView(main: HTMLElement, ctx: Ctx): void {
 // Moje nákupy
 // ---------------------------------------------------------------------------
 
-function tierSummary(gifts: Gift[]): string {
-  const n = gifts.length;
-  const byTier = TIERS.map((t) => ({ ...t, n: gifts.filter((g) => g.tier === t.tier).length })).filter((t) => t.n > 0);
-  return `${n} ${plural(n, 'dárek', 'dárky', 'dárků')} · ${byTier.map((t) => `${t.n}× ${t.label}`).join(' · ')}`;
+/** Rozpad podle cenových hladin, například „2× do 1 000 Kč · 1× nad 3 000 Kč“. */
+function tierBreakdown(items: { tier: Tier }[]): string {
+  return TIERS.map((t) => ({ ...t, n: items.filter((g) => g.tier === t.tier).length }))
+    .filter((t) => t.n > 0)
+    .map((t) => `${t.n}× ${t.label}`)
+    .join(' · ');
+}
+
+function giftCount(n: number): string {
+  return `${n} ${plural(n, 'dárek', 'dárky', 'dárků')}`;
 }
 
 async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
@@ -536,9 +685,18 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
   const load = async () => {
     const purchases = await api.myPurchases(ctx.token);
     clear(body);
-    const all = purchases.flatMap((p) => p.gifts);
+    const all = purchases.flatMap((p) => [...p.gifts, ...p.extras]);
+    const addExtra = el(
+      'button',
+      { class: 'btn secondary block', onClick: () => extraSheet(ctx, null, null, load) },
+      '+ Dárek mimo seznam',
+    );
     if (all.length === 0) {
-      body.appendChild(emptyState('🛍️', 'Zatím nic. Projdi seznamy lidí a zaškrtni, co koupíš.', el('a', { class: 'btn', href: '#/lide' }, 'Na lidi')));
+      mount(
+        body,
+        emptyState('🛍️', 'Zatím nic. Projdi seznamy lidí a zaškrtni, co koupíš.', el('a', { class: 'btn', href: '#/lide' }, 'Na lidi')),
+        addExtra,
+      );
       return;
     }
     body.append(
@@ -547,9 +705,9 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
         { class: 'card tight row between' },
         el(
           'div',
-          {},
-          el('strong', {}, `${all.length} ${plural(all.length, 'dárek', 'dárky', 'dárků')} pro ${purchases.length} ${plural(purchases.length, 'člověka', 'lidi', 'lidí')}`),
-          el('div', { class: 'muted small' }, tierSummary(all)),
+          { class: 'grow' },
+          el('strong', {}, `${giftCount(all.length)} pro ${purchases.length} ${plural(purchases.length, 'člověka', 'lidi', 'lidí')}`),
+          el('div', { class: 'muted small' }, tierBreakdown(all)),
         ),
         el('span', { 'aria-hidden': 'true', style: 'font-size:1.6rem' }, '🎅'),
       ),
@@ -560,7 +718,12 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
           el(
             'div',
             { class: 'section-title' },
-            el('div', {}, el('h3', {}, `Pro ${p.person_name}`), el('div', { class: 'muted small' }, tierSummary(p.gifts))),
+            el(
+              'div',
+              {},
+              el('h3', {}, p.person_name),
+              el('div', { class: 'muted small' }, `${giftCount(p.gifts.length + p.extras.length)} · ${tierBreakdown([...p.gifts, ...p.extras])}`),
+            ),
             el('a', { class: 'small', href: `#/osoba/${p.person_id}` }, 'celý seznam'),
           ),
           ...p.gifts.map((g) =>
@@ -597,8 +760,10 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
               ),
             ),
           ),
+          ...p.extras.map((e) => extraRow(ctx, e, load)),
         ),
       ),
+      addExtra,
     );
   };
   await load();
@@ -616,7 +781,7 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
     .myPurchases(ctx.token)
     .then((purchases) => {
       clear(purchasesCard);
-      const all = purchases.flatMap((p) => p.gifts);
+      const all = purchases.flatMap((p) => [...p.gifts, ...p.extras]);
       mount(
         purchasesCard,
         el('h3', {}, 'Co ode mě přinese Ježíšek'),
@@ -631,10 +796,14 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
                   'div',
                   { class: 'row between' },
                   el('a', { href: `#/osoba/${p.person_id}`, style: 'font-weight:600' }, p.person_name),
-                  el('span', { class: 'muted small' }, `${p.gifts.length} ${plural(p.gifts.length, 'dárek', 'dárky', 'dárků')}`),
+                  el(
+                    'span',
+                    { class: 'muted small' },
+                    `${p.gifts.length + p.extras.length} ${plural(p.gifts.length + p.extras.length, 'dárek', 'dárky', 'dárků')}`,
+                  ),
                 ),
               ),
-              el('div', { class: 'muted small', style: 'border-top:1px solid var(--line);padding-top:6px' }, tierSummary(all)),
+              el('div', { class: 'muted small', style: 'border-top:1px solid var(--line);padding-top:6px' }, tierBreakdown(all)),
             ),
         el('a', { class: 'btn secondary small', href: '#/nakupy', style: 'align-self:flex-start' }, 'Otevřít nákupy'),
       );

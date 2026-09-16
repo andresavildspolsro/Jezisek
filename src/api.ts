@@ -111,12 +111,33 @@ export interface PersonGifts {
     is_me: boolean;
   };
   gifts: Gift[];
+  /** Co pro toho člověka mám mimo jeho přání. Prázdné u vlastního seznamu. */
+  extras: ExtraGift[];
+}
+
+/** Dárek koupený mimo seznam přání. Vidí ho jen ten, kdo ho zapsal. */
+export interface ExtraGift {
+  id: string;
+  recipient_id: string;
+  title: string;
+  tier: Tier;
+  url: string | null;
+  note: string | null;
+  created_at: string;
+  extra: true;
 }
 
 export interface Purchase {
   person_id: string;
   person_name: string;
   gifts: Gift[];
+  extras: ExtraGift[];
+}
+
+export interface Recipient {
+  id: string;
+  name: string;
+  is_child: boolean;
 }
 
 export interface AdminGroup {
@@ -187,6 +208,28 @@ export const api = {
   unclaimGift: (token: string, gift: string) => rpc<Gift>('unclaim_gift', { p_token: token, p_gift: gift }),
   myPurchases: (token: string) => rpc<Purchase[]>('my_purchases', { p_token: token }),
 
+  myRecipients: (token: string) => rpc<Recipient[]>('my_recipients', { p_token: token }),
+  addExtraGift: (token: string, recipient: string, g: GiftInput) =>
+    rpc<ExtraGift>('add_extra_gift', {
+      p_token: token,
+      p_recipient: recipient,
+      p_title: g.title,
+      p_tier: g.tier,
+      p_url: g.url ?? null,
+      p_note: g.note ?? null,
+    }),
+  updateExtraGift: (token: string, extra: string, g: GiftInput) =>
+    rpc<ExtraGift>('update_extra_gift', {
+      p_token: token,
+      p_extra: extra,
+      p_title: g.title,
+      p_tier: g.tier,
+      p_url: g.url ?? null,
+      p_note: g.note ?? null,
+    }),
+  deleteExtraGift: (token: string, extra: string) =>
+    rpc<null>('delete_extra_gift', { p_token: token, p_extra: extra }),
+
   addChild: (token: string, name: string, gifts: GiftInput[]) =>
     rpc<{ id: string; name: string }>('add_child', { p_token: token, p_name: name, p_gifts: gifts }),
   removeChild: (token: string, child: string) => rpc<null>('remove_child', { p_token: token, p_child: child }),
@@ -241,6 +284,8 @@ export function errorText(e: unknown): string {
       return 'Tento dárek už někdo koupil, proto ho nejde smazat.';
     case 'own_gift':
       return 'Svůj vlastní dárek si koupit nemůžeš.';
+    case 'no_recipient':
+      return 'Vyber, komu jsi dárek koupil.';
     case 'already_taken':
       return 'Tento dárek si mezitím vzal někdo jiný.';
     case 'not_yours':

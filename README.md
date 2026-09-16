@@ -26,8 +26,13 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
   nad 3 000 Kč), odkaz a poznámku. Přidávat a upravovat jde kdykoli; smazat
   jen dárek, který ještě nikdo nekoupil.
 - **Koupím to já** označí dárek jako koupený. Jeden kupující na dárek,
-  vlastní dárek koupit nejde, označení lze vrátit. Záložka **Nákupy** ukazuje,
-  co jsem komu slíbil.
+  vlastní dárek koupit nejde, označení lze vrátit.
+- **Dárky mimo seznam** (tabulka `extra_gifts`): co jsem někomu koupil, i když
+  si to nepřál. Zapisují se u člověka v oddílu „Mimo seznam“ nebo z Nákupů
+  přes výběr osoby. Vidí je **jen kupující**, obdarovanému se nikde nezobrazí.
+- **Nákupy** a karta v záložce **Já** ukazují souhrn: kolik dárků mám pro
+  koho, včetně těch mimo seznam, s rozpadem podle cenových hladin. Každý vidí
+  jen svoje nákupy.
 - **Děti.** Rodič může vést seznam za dítě, které se samo nepřihlašuje. Dítě
   je ve všech skupinách rodiče; rodič jeho seznam upravuje a zároveň (jako
   jeden z kupujících) vidí, co už má kupce.
