@@ -1,7 +1,7 @@
 // Přihlášená část: lidé ve skupině, seznam jednoho člověka, moje přání,
 // moje nákupy, nastavení a správa.
 
-import { api, errorText, type ExtraGift, type Gift, type GroupRef, type Me, type PersonCard, type Tier } from './api';
+import { api, errorText, type ExtraGift, type Gift, type GroupRef, type Guardian, type Me, type PersonCard, type Tier } from './api';
 import { session } from './state';
 import {
   clear,
@@ -265,12 +265,69 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
 
   const list = el('div', { class: 'stack' });
   const extrasBox = el('div', { class: 'stack' });
+  const guardiansBox = el('div', { class: 'stack' });
   const refresh = async () => {
     const fresh = await api.personGifts(ctx.token, personId);
     clear(list);
     renderGifts(fresh.gifts);
     renderExtras(fresh.extras);
+    renderGuardians(fresh.person.guardians);
     summary.textContent = summaryText(fresh.gifts, fresh.extras);
+  };
+  const renderGuardians = (guardians: Guardian[]) => {
+    clear(guardiansBox);
+    if (!canEdit) return;
+    mount(
+      guardiansBox,
+      el(
+        'div',
+        { class: 'card stack' },
+        el('h3', {}, guardians.length > 1 ? 'Rodiče' : 'Rodič'),
+        el('p', { class: 'muted small' }, 'Kdo tu smí upravovat seznam přání. Všichni vidí i to, co už je koupené.'),
+        ...guardians.map((g) =>
+          el(
+            'div',
+            { class: 'row between' },
+            el('span', { style: 'font-weight:600' }, g.id === ctx.me.id ? `${g.name} (ty)` : g.name),
+            guardians.length > 1
+              ? el(
+                  'button',
+                  {
+                    class: 'btn ghost small',
+                    style: 'color:var(--red)',
+                    onClick: async () => {
+                      const self = g.id === ctx.me.id;
+                      const ok = await confirmSheet(
+                        self ? 'Přestat spravovat?' : 'Odebrat rodiče?',
+                        self
+                          ? `Seznam ti zmizí z Moje přání. ${guardians.filter((x) => x.id !== g.id).map((x) => x.name).join(', ')} ho spravuje dál.`
+                          : `${g.name} už nebude moct seznam upravovat.`,
+                        'Odebrat',
+                        true,
+                      );
+                      if (!ok) return;
+                      try {
+                        await api.removeGuardian(ctx.token, personId, g.id);
+                        toast('Hotovo.');
+                        if (self) navigate('#/lide');
+                        else await refresh();
+                      } catch (ex) {
+                        toast(errorText(ex), true);
+                      }
+                    },
+                  },
+                  'Odebrat',
+                )
+              : null,
+          ),
+        ),
+        el(
+          'button',
+          { class: 'btn secondary block', onClick: () => addGuardianSheet(ctx, personId, p.name, guardians, refresh) },
+          '+ Přidat dalšího rodiče',
+        ),
+      ),
+    );
   };
   const renderExtras = (extras: ExtraGift[]) => {
     clear(extrasBox);
@@ -310,6 +367,7 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
 
   renderGifts(data.gifts);
   renderExtras(data.extras);
+  renderGuardians(p.guardians);
 
   mount(main, 
     el('a', { class: 'btn ghost small', href: '#/lide', style: 'align-self:flex-start' }, '‹ Lidé'),
@@ -325,7 +383,69 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
       ? el('button', { class: 'btn secondary block', onClick: () => giftSheet(ctx, personId, null, refresh) }, '+ Přidat přání')
       : null,
     extrasBox,
+    guardiansBox,
   );
+}
+
+/** Přizve dalšího rodiče ke správě seznamu dítěte. */
+function addGuardianSheet(
+  ctx: Ctx,
+  childId: string,
+  childName: string,
+  guardians: Guardian[],
+  onDone: () => Promise<void> | void,
+): void {
+  const picker = el('select', { class: 'input' }, el('option', { value: '' }, 'Načítám lidi…'));
+  const err = el('div');
+  void api
+    .myRecipients(ctx.token)
+    .then((people) => {
+      const free = people.filter((r) => !r.is_child && !guardians.some((g) => g.id === r.id));
+      clear(picker);
+      if (free.length === 0) {
+        mount(picker, el('option', { value: '' }, 'Nikdo další tu není'));
+        mount(err, errorBox('Druhý rodič musí být ve stejné skupině jako ty. Pošli mu nejdřív pozvánku.'));
+        return;
+      }
+      mount(picker, el('option', { value: '' }, 'Vyber člověka…'), ...free.map((r) => el('option', { value: r.id }, r.name)));
+    })
+    .catch((e) => {
+      clear(err);
+      mount(err, errorBox(errorText(e)));
+    });
+
+  const save = el(
+    'button',
+    {
+      class: 'btn',
+      onClick: async () => {
+        clear(err);
+        if (!picker.value) {
+          mount(err, errorBox('Vyber člověka.'));
+          return;
+        }
+        save.disabled = true;
+        try {
+          await api.addGuardian(ctx.token, childId, picker.value);
+          close();
+          toast('Přidáno, seznam teď spravujete spolu.');
+          await onDone();
+        } catch (ex) {
+          mount(err, errorBox(errorText(ex)));
+          save.disabled = false;
+        }
+      },
+    },
+    'Přidat',
+  );
+
+  const close = openSheet([
+    el('h2', {}, `Další rodič pro ${childName}`),
+    el('p', { class: 'muted small' }, 'Bude moct přidávat a upravovat přání a uvidí, co už je koupené. Dítě se objeví i v jeho skupinách.'),
+    field('Kdo', picker),
+    err,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
+  ]);
 }
 
 /** Karta dárku mimo seznam. Zobrazuje se jen tomu, kdo ho zapsal. */
@@ -630,7 +750,12 @@ async function myListView(main: HTMLElement, ctx: Ctx): Promise<void> {
               'a',
               { class: 'card clickable person-card', href: `#/osoba/${c.id}` },
               el('span', { class: 'avatar child', 'aria-hidden': 'true' }, initials(c.name)),
-              el('div', { class: 'grow' }, el('div', { class: 'name' }, c.name), el('div', { class: 'muted small' }, 'upravit seznam')),
+              el(
+                'div',
+                { class: 'grow' },
+                el('div', { class: 'name' }, c.name),
+                el('div', { class: 'muted small' }, coGuardianText(c.guardians, ctx.me.id) || 'upravit seznam'),
+              ),
               el('span', { class: 'chev', 'aria-hidden': 'true' }, '›'),
             ),
           ),
@@ -688,6 +813,16 @@ function addChildView(main: HTMLElement, ctx: Ctx): void {
 // ---------------------------------------------------------------------------
 
 /** Rozpad podle cenových hladin, například „2× do 1 000 Kč · 1× nad 3 000 Kč“. */
+/**
+ * „druhý rodič: Bedřich“, nebo prázdno, když je dítě jen moje. Jména se
+ * nikdy neskloňují, proto stojí za dvojtečkou.
+ */
+function coGuardianText(guardians: Guardian[], meId: string): string {
+  const others = guardians.filter((g) => g.id !== meId).map((g) => g.name);
+  if (others.length === 0) return '';
+  return `${others.length === 1 ? 'druhý rodič' : 'další rodiče'}: ${others.join(', ')}`;
+}
+
 function tierBreakdown(items: { tier: Tier }[]): string {
   return TIERS.map((t) => ({ ...t, n: items.filter((g) => g.tier === t.tier).length }))
     .filter((t) => t.n > 0)
@@ -1033,17 +1168,31 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
               el(
                 'div',
                 { class: 'row between' },
-                el('a', { href: `#/osoba/${c.id}`, style: 'font-weight:600' }, c.name),
+                el(
+                  'div',
+                  {},
+                  el('a', { href: `#/osoba/${c.id}`, style: 'font-weight:600' }, c.name),
+                  coGuardianText(c.guardians, ctx.me.id) ? el('div', { class: 'muted small' }, coGuardianText(c.guardians, ctx.me.id)) : null,
+                ),
                 el(
                   'button',
                   {
                     class: 'btn ghost small',
                     style: 'color:var(--red)',
                     onClick: async () => {
-                      if (!(await confirmSheet('Odebrat dítě?', `Seznam přání „${c.name}“ bude smazaný.`, 'Odebrat', true))) return;
+                      const shared = c.guardians.length > 1;
+                      const ok = await confirmSheet(
+                        shared ? 'Přestat spravovat?' : 'Odebrat dítě?',
+                        shared
+                          ? `Seznam ti zmizí, ${c.guardians.filter((g) => g.id !== ctx.me.id).map((g) => g.name).join(', ')} ho spravuje dál.`
+                          : `Seznam přání „${c.name}“ bude smazaný.`,
+                        'Odebrat',
+                        true,
+                      );
+                      if (!ok) return;
                       try {
-                        await api.removeChild(ctx.token, c.id);
-                        toast('Odebráno.');
+                        const r = await api.removeChild(ctx.token, c.id);
+                        toast(r.deleted ? 'Smazáno.' : 'Odebráno z tvého seznamu.');
                         navigate('#/ja');
                       } catch (e) {
                         toast(errorText(e), true);

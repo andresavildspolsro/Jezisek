@@ -42,6 +42,11 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
 - **Děti.** Rodič může vést seznam za dítě, které se samo nepřihlašuje. Dítě
   je ve všech skupinách rodiče; rodič jeho seznam upravuje a zároveň (jako
   jeden z kupujících) vidí, co už má kupce.
+- **Dítě může mít víc rodičů** (tabulka `child_guardians`). Kterýkoli z nich
+  přizve dalšího z lidí ve svých skupinách (`add_guardian`); dítě se objeví i
+  v jeho skupinách a oba seznam upravují. `people.managed_by` zůstává jako
+  zakladatel a při jeho odchodu přejde na dalšího rodiče. Odebrání sebe sama
+  (`remove_child`) profil smaže jen tehdy, když jsem poslední rodič.
 - **Správce** (`people.is_admin = true`, nastavuje se ručně v databázi) vidí
   všechny skupiny, může resetovat PIN, smazat člověka nebo skupinu.
 

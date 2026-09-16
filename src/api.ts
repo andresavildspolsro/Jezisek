@@ -78,12 +78,18 @@ export interface GroupRef {
   invite_code: string;
 }
 
+/** Rodič, který smí spravovat seznam dítěte. */
+export interface Guardian {
+  id: string;
+  name: string;
+}
+
 export interface Me {
   id: string;
   name: string;
   is_admin: boolean;
   groups: GroupRef[];
-  children: { id: string; name: string }[];
+  children: { id: string; name: string; guardians: Guardian[] }[];
 }
 
 export interface GroupPreview {
@@ -109,6 +115,8 @@ export interface PersonGifts {
     is_child: boolean;
     managed_by_me: boolean;
     is_me: boolean;
+    /** U dítěte všichni jeho rodiče, jinak prázdné. */
+    guardians: Guardian[];
   };
   gifts: Gift[];
   /** Co pro toho člověka mám mimo jeho přání. Prázdné u vlastního seznamu. */
@@ -244,8 +252,13 @@ export const api = {
     rpc<{ renamed: number; name: string }>('rename_extra_recipient', { p_token: token, p_name: name, p_new_name: newName }),
 
   addChild: (token: string, name: string, gifts: GiftInput[]) =>
-    rpc<{ id: string; name: string }>('add_child', { p_token: token, p_name: name, p_gifts: gifts }),
-  removeChild: (token: string, child: string) => rpc<null>('remove_child', { p_token: token, p_child: child }),
+    rpc<{ id: string; name: string; guardians: Guardian[] }>('add_child', { p_token: token, p_name: name, p_gifts: gifts }),
+  /** Odebere mě ze správců dítěte; `deleted` říká, jestli tím profil zanikl. */
+  removeChild: (token: string, child: string) => rpc<{ deleted: boolean }>('remove_child', { p_token: token, p_child: child }),
+  addGuardian: (token: string, child: string, person: string) =>
+    rpc<{ guardians: Guardian[]; already: boolean }>('add_guardian', { p_token: token, p_child: child, p_person: person }),
+  removeGuardian: (token: string, child: string, person: string) =>
+    rpc<{ guardians: Guardian[] }>('remove_guardian', { p_token: token, p_child: child, p_person: person }),
   changePin: (token: string, oldPin: string, newPin: string) =>
     rpc<null>('change_pin', { p_token: token, p_old: oldPin, p_new: newPin }),
 
@@ -301,6 +314,8 @@ export function errorText(e: unknown): string {
       return 'Vyber ze seznamu, nebo napiš jméno člověka mimo aplikaci.';
     case 'already_taken':
       return 'Tento dárek si mezitím vzal někdo jiný.';
+    case 'last_guardian':
+      return 'Poslední rodič odebrat nejde. Buď přidej druhého, nebo dítě rovnou odeber ze seznamu.';
     case 'not_yours':
       return 'Tento dárek nemáš označený jako svůj nákup.';
     default:
