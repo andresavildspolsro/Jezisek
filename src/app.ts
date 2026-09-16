@@ -25,6 +25,7 @@ import {
   toast,
 } from './ui';
 import { navigate } from './main';
+import { downloadDoc, printDoc, purchasesDoc, wishlistDoc, type ExportDoc } from './export';
 
 interface Ctx {
   token: string;
@@ -370,7 +371,23 @@ async function personView(main: HTMLElement, ctx: Ctx, personId: string): Promis
   renderGuardians(p.guardians);
 
   mount(main, 
-    el('a', { class: 'btn ghost small', href: '#/lide', style: 'align-self:flex-start' }, '‹ Lidé'),
+    el(
+      'div',
+      { class: 'row between' },
+      el('a', { class: 'btn ghost small', href: '#/lide' }, '‹ Lidé'),
+      el(
+        'button',
+        {
+          class: 'btn ghost small',
+          onClick: () =>
+            exportSheet('Seznam přání', 'Dokument neobsahuje, co je koupené, takže ho můžeš poslat komukoli dál.', async () => {
+              const fresh = await api.personGifts(ctx.token, personId);
+              return wishlistDoc(fresh.person.name, fresh.gifts, false);
+            }),
+        },
+        '⭳ Tisk',
+      ),
+    ),
     el(
       'div',
       { class: 'row' },
@@ -714,7 +731,27 @@ function giftSheet(ctx: Ctx, ownerId: string, existing: Gift | null, onDone: () 
 // ---------------------------------------------------------------------------
 
 async function myListView(main: HTMLElement, ctx: Ctx): Promise<void> {
-  mount(main, el('h2', {}, 'Moje přání'), spinner());
+  mount(
+    main,
+    el(
+      'div',
+      { class: 'section-title' },
+      el('h2', {}, 'Moje přání'),
+      el(
+        'button',
+        {
+          class: 'btn ghost small',
+          onClick: () =>
+            exportSheet('Můj seznam přání', 'Pro někoho, kdo aplikaci nepoužívá. Co je koupené, v dokumentu není.', async () => {
+              const fresh = await api.personGifts(ctx.token, ctx.me.id);
+              return wishlistDoc(ctx.me.name, fresh.gifts, true);
+            }),
+        },
+        '⭳ Tisk',
+      ),
+    ),
+    spinner(),
+  );
   const data = await api.personGifts(ctx.token, ctx.me.id);
   main.querySelector('.spinner')?.remove();
 
@@ -835,7 +872,26 @@ function giftCount(n: number): string {
 }
 
 async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
-  mount(main, el('h2', {}, 'Moje nákupy'), spinner());
+  mount(
+    main,
+    el(
+      'div',
+      { class: 'section-title' },
+      el('h2', {}, 'Moje nákupy'),
+      el(
+        'button',
+        {
+          class: 'btn ghost small',
+          onClick: () =>
+            exportSheet('Nákupní seznam', 'Vytiskni si ho na cestu do obchodu, nebo si ho ulož. Vidí ho jen ty.', async () =>
+              purchasesDoc(await api.myPurchases(ctx.token)),
+            ),
+        },
+        '⭳ Tisk',
+      ),
+    ),
+    spinner(),
+  );
   const body = el('div', { class: 'stack' });
   const load = async () => {
     const purchases = await api.myPurchases(ctx.token);
@@ -1057,6 +1113,31 @@ function renameRecipientSheet(ctx: Ctx, name: string, onDone: () => Promise<void
     el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn secondary', onClick: () => close() }, 'Zpět'), save),
   ]);
   setTimeout(() => input.focus(), 50);
+}
+
+/** Nabídne stažení nebo tisk hotového seznamu. */
+function exportSheet(title: string, note: string, build: () => Promise<ExportDoc>): void {
+  const err = el('div');
+  const run = (fn: (doc: ExportDoc) => void) => async (e: Event) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    b.disabled = true;
+    clear(err);
+    try {
+      fn(await build());
+      close();
+    } catch (ex) {
+      mount(err, errorBox(errorText(ex)));
+      b.disabled = false;
+    }
+  };
+  const close = openSheet([
+    el('h2', {}, title),
+    el('p', { class: 'muted small' }, note),
+    el('button', { class: 'btn block', onClick: run(printDoc) }, 'Vytisknout nebo uložit PDF'),
+    el('button', { class: 'btn secondary block', onClick: run(downloadDoc) }, 'Stáhnout soubor'),
+    err,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, el('button', { class: 'btn ghost', onClick: () => close() }, 'Zpět')),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
