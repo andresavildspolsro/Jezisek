@@ -17,7 +17,7 @@ import {
   toast,
 } from './ui';
 import { navigate, resolveAccount } from './main';
-import { authErrorText, googleUrl, heldAccount, pending, sendRecovery, signIn, signUp } from './account';
+import { authErrorText, googleUrl, heldAccount, onlyWithGoogle, pending, sendRecovery, signIn, signUp } from './account';
 
 function hero(title: string, subtitle?: string): HTMLElement {
   return el(
@@ -43,8 +43,8 @@ function methodPicker(onChange: (m: Method) => void): { root: HTMLElement; get: 
     ['email', 'E-mail'],
     ['google', 'Google'],
   ];
-  const buttons = labels.map(([m, label]) =>
-    el(
+  const buttons = labels.map(([m, label]) => {
+    const b = el(
       'button',
       {
         type: 'button',
@@ -52,18 +52,20 @@ function methodPicker(onChange: (m: Method) => void): { root: HTMLElement; get: 
         'aria-selected': String(value === m),
         onClick: () => {
           value = m;
-          buttons.forEach((b, i) => b.setAttribute('aria-selected', String(labels[i][0] === m)));
+          buttons.forEach((x, i) => x.setAttribute('aria-selected', String(labels[i][0] === m)));
           onChange(m);
         },
       },
       label,
-    ),
-  );
+    );
+    // Google nabízíme jen tehdy, když je v projektu opravdu zapnutý.
+    return m === 'google' ? onlyWithGoogle(b) : b;
+  });
   return { root: el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Způsob přihlášení' }, ...buttons), get: () => value };
 }
 
 function googleButton(label: string, before?: () => void): HTMLElement {
-  return el(
+  const btn = el(
     'button',
     {
       type: 'button',
@@ -77,6 +79,7 @@ function googleButton(label: string, before?: () => void): HTMLElement {
     el('span', { 'aria-hidden': 'true' }, 'G'),
     label,
   );
+  return onlyWithGoogle(btn);
 }
 
 function separator(text: string): HTMLElement {

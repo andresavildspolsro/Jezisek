@@ -63,6 +63,32 @@ export async function signUp(email: string, password: string): Promise<{ jwt: st
   return { jwt: r.access_token ?? null };
 }
 
+let providersPromise: Promise<{ google: boolean; email: boolean }> | null = null;
+
+/** Co má projekt zapnuté. Ptáme se jednou, odpověď je veřejná. */
+export function providers(): Promise<{ google: boolean; email: boolean }> {
+  providersPromise ??= fetch(`${URL_BASE}/auth/v1/settings`, { headers: { apikey: KEY } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d: { external?: Record<string, boolean> } | null) => ({
+      google: d?.external?.google === true,
+      email: d?.external?.email !== false,
+    }))
+    .catch(() => ({ google: false, email: true }));
+  return providersPromise;
+}
+
+/**
+ * Prvek zůstane schovaný, dokud se nepotvrdí, že je Google zapnutý. Bez toho
+ * by lidé končili na chybové stránce Supabase.
+ */
+export function onlyWithGoogle<T extends HTMLElement>(node: T): T {
+  node.hidden = true;
+  void providers().then((p) => {
+    if (p.google) node.hidden = false;
+  });
+  return node;
+}
+
 /** Odkaz na Google. Po návratu přijde JWT ve fragmentu adresy. */
 export function googleUrl(): string {
   const redirect = encodeURIComponent(redirectTarget());

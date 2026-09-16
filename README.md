@@ -75,6 +75,8 @@ V Supabase (projekt `jezisek`):
 - **Authentication → Providers → Google**: zapnout a vložit Client ID a
   Client Secret z Google Cloud (OAuth 2.0 Client, typ Web application,
   Authorized redirect URI `https://<projekt>.supabase.co/auth/v1/callback`).
+  Dokud poskytovatel zapnutý není, aplikace se na to sama ptá přes
+  `/auth/v1/settings` a tlačítka s Googlem vůbec nenabídne.
 - **Edge Functions → send-list → Secrets**: `RESEND_API_KEY` z Resendu a
   `JEZISEK_FROM` ve tvaru `Ježíšek <jezisek@tvojedomena.cz>` s ověřenou
   doménou. Dokud chybí, tlačítko Poslat e-mailem vrátí srozumitelnou hlášku
