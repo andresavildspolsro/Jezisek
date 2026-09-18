@@ -73,6 +73,8 @@ export interface Gift {
   /** null = jde o můj vlastní seznam, stav se nezobrazuje */
   taken: boolean | null;
   mine: boolean | null;
+  /** Moje soukromá značka „už koupeno“. null u dárku, který jsem si nezamluvil. */
+  bought: boolean | null;
 }
 
 export interface GroupRef {
@@ -143,6 +145,8 @@ export interface ExtraGift {
   note: string | null;
   created_at: string;
   extra: true;
+  /** Moje soukromá značka „už koupeno“. */
+  bought: boolean;
 }
 
 export interface Purchase {
@@ -239,6 +243,11 @@ export const api = {
   claimGift: (token: string, gift: string) => rpc<Gift>('claim_gift', { p_token: token, p_gift: gift }),
   unclaimGift: (token: string, gift: string) => rpc<Gift>('unclaim_gift', { p_token: token, p_gift: gift }),
   myPurchases: (token: string) => rpc<Purchase[]>('my_purchases', { p_token: token }),
+  /** Soukromá poznámka „mám nakoupeno“. Vidí ji jen ten, kdo si dárek zamluvil. */
+  setGiftBought: (token: string, gift: string, bought: boolean) =>
+    rpc<Gift>('set_gift_bought', { p_token: token, p_gift: gift, p_bought: bought }),
+  setExtraBought: (token: string, extra: string, bought: boolean) =>
+    rpc<ExtraGift>('set_extra_bought', { p_token: token, p_extra: extra, p_bought: bought }),
 
   myRecipients: (token: string) => rpc<Recipient[]>('my_recipients', { p_token: token }),
   /** Obdarovaný je buď člověk z aplikace (`recipientId`), nebo jen jméno. */

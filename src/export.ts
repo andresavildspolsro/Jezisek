@@ -13,6 +13,8 @@ interface Row {
   url: string | null;
   note: string | null;
   badge?: string;
+  /** Moje soukromá značka „mám koupeno“; v seznamu přání se nepoužívá. */
+  done?: boolean;
 }
 
 interface Section {
@@ -47,23 +49,24 @@ function today(): string {
   return new Date().toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function giftRow(g: Gift | ExtraGift, badge?: string): Row {
-  return { title: g.title, tier: g.tier, url: g.url, note: g.note, badge };
+function giftRow(g: Gift | ExtraGift, badge?: string, withDone = false): Row {
+  return { title: g.title, tier: g.tier, url: g.url, note: g.note, badge, done: withDone ? g.bought === true : undefined };
 }
 
 /** Moje nákupy: co komu kupuju, včetně dárků mimo seznam a lidí mimo aplikaci. */
 export function purchasesDoc(purchases: Purchase[]): ExportDoc {
   const all = purchases.flatMap((p) => [...p.gifts, ...p.extras]);
+  const done = all.filter((g) => g.bought === true).length;
   return {
     title: 'Moje nákupy',
     intro: `${all.length} ${all.length === 1 ? 'dárek' : all.length < 5 ? 'dárky' : 'dárků'} pro ${purchases.length} ${
       purchases.length === 1 ? 'člověka' : purchases.length < 5 ? 'lidi' : 'lidí'
-    } · ${today()}`,
+    } · koupeno ${done} z ${all.length} · ${today()}`,
     filename: `jezisek-nakupy-${new Date().toISOString().slice(0, 10)}`,
     sections: purchases.map((p) => ({
       heading: p.person_name,
       subheading: p.off_app ? 'není v aplikaci' : undefined,
-      rows: [...p.gifts.map((g) => giftRow(g)), ...p.extras.map((e) => giftRow(e, 'mimo seznam'))],
+      rows: [...p.gifts.map((g) => giftRow(g, undefined, true)), ...p.extras.map((e) => giftRow(e, 'mimo seznam', true))],
     })),
   };
 }
@@ -91,8 +94,8 @@ export function renderDoc(doc: ExportDoc): string {
           ? '<p class="empty">Zatím nic.</p>'
           : s.rows
               .map(
-                (r) => `<li>
-        <div class="row"><span class="check"></span><span class="title">${esc(r.title)}</span>
+                (r) => `<li class="${r.done ? 'done' : ''}">
+        <div class="row"><span class="check">${r.done ? '✓' : ''}</span><span class="title">${esc(r.title)}</span>
           <span class="pill t${r.tier}">${esc(tierInfo(r.tier).label)}</span>
           ${r.badge ? `<span class="pill badge">${esc(r.badge)}</span>` : ''}
         </div>
@@ -130,7 +133,10 @@ export function renderDoc(doc: ExportDoc): string {
   li { padding: 10px 0; border-bottom: 1px dashed #e3d9c8; page-break-inside: avoid; }
   li:last-child { border-bottom: 0; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .check { width: 14px; height: 14px; border: 1.5px solid #6b7a72; border-radius: 3px; flex: none; }
+  .check { width: 15px; height: 15px; border: 1.5px solid #6b7a72; border-radius: 3px; flex: none;
+           display: grid; place-items: center; font-size: 11px; line-height: 1; color: #fff; }
+  li.done .check { background: #2e7d4f; border-color: #2e7d4f; }
+  li.done .title { color: #6b7a72; }
   .title { font-weight: 600; }
   .pill { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
           background: #e2f2e7; color: #2e7d4f; white-space: nowrap; }

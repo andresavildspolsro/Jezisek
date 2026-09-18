@@ -158,6 +158,35 @@ export function pinInput(props: Props = {}): HTMLInputElement {
   });
 }
 
+/**
+ * Přepínač „už koupeno“. Je to soukromá poznámka kupujícího, proto vypadá
+ * jako zaškrtávátko, ne jako tlačítko, které by něco měnilo ostatním.
+ */
+export function boughtToggle(checked: boolean, onToggle: (v: boolean) => Promise<void> | void): HTMLElement {
+  const btn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'bought',
+      'aria-pressed': String(checked),
+      onClick: async () => {
+        const next = btn.getAttribute('aria-pressed') !== 'true';
+        btn.disabled = true;
+        try {
+          await onToggle(next);
+          btn.setAttribute('aria-pressed', String(next));
+          box.textContent = next ? '✓' : '';
+        } finally {
+          btn.disabled = false;
+        }
+      },
+    },
+  );
+  const box = el('span', { class: 'box', 'aria-hidden': 'true' }, checked ? '✓' : '');
+  mount(btn, box, el('span', {}, 'Mám koupeno'));
+  return btn;
+}
+
 export function errorBox(text: string): HTMLElement {
   return el('div', { class: 'error', role: 'alert' }, text);
 }

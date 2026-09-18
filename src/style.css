@@ -347,6 +347,52 @@ main.plain {
   flex-shrink: 0;
 }
 
+/* Soukromá značka „mám koupeno“ u zamluveného dárku. */
+.bought {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.bought .box {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: #fff;
+}
+
+.bought[aria-pressed='true'] {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.bought[aria-pressed='true'] .box {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.bought:disabled {
+  opacity: 0.6;
+}
+
+.gift.done .title {
+  color: var(--muted);
+}
+
 .link-out {
   font-size: 0.875rem;
   white-space: nowrap;

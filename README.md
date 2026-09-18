@@ -30,6 +30,11 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
   jen dárek, který ještě nikdo nekoupil.
 - **Koupím to já** označí dárek jako koupený. Jeden kupující na dárek,
   vlastní dárek koupit nejde, označení lze vrátit.
+- **Mám koupeno** (`gifts.bought_at`, `extra_gifts.bought_at`) je soukromá
+  poznámka kupujícího o tom, že už nákup vyřídil. Vidí ji jen on: `_gift_json`
+  vrací `bought` pouze tomu, kdo si dárek zamluvil, ostatním `null`. Vrácení
+  dárku ji maže, aby ji nezdědil další kupující. Nákupy, karta v záložce Já
+  i tiskový seznam z ní počítají „koupeno 2 z 5“.
 - **Dárky mimo seznam** (tabulka `extra_gifts`): co jsem někomu koupil, i když
   si to nepřál. Zapisují se u člověka v oddílu „Mimo seznam“ nebo z Nákupů
   přes výběr osoby. Vidí je **jen kupující**, obdarovanému se nikde nezobrazí.

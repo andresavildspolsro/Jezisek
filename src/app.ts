@@ -4,6 +4,7 @@
 import { api, errorText, sendList, type ExtraGift, type Gift, type GroupRef, type Guardian, type Me, type PersonCard, type Tier } from './api';
 import { session } from './state';
 import {
+  boughtToggle,
   clear,
   confirmSheet,
   daysToChristmas,
@@ -490,7 +491,7 @@ function addGuardianSheet(
 function extraRow(ctx: Ctx, e: ExtraGift, onChange: () => Promise<void> | void, badge = true): HTMLElement {
   return el(
     'div',
-    { class: 'card tight gift' },
+    { class: `card tight gift ${e.bought ? 'done' : ''}`.trim() },
     el(
       'div',
       { class: 'body' },
@@ -507,6 +508,10 @@ function extraRow(ctx: Ctx, e: ExtraGift, onChange: () => Promise<void> | void, 
     el(
       'div',
       { class: 'actions' },
+      boughtToggle(e.bought, async (v) => {
+        await api.setExtraBought(ctx.token, e.id, v);
+        await onChange();
+      }),
       el(
         'div',
         { class: 'row', style: 'gap:2px' },
@@ -651,7 +656,10 @@ function giftRow(ctx: Ctx, g: Gift, o: GiftRowOpts): HTMLElement {
     if (g.mine) {
       actions.append(
         el('button', { class: 'btn gold small', onClick: busy(async () => { await api.unclaimGift(ctx.token, g.id); toast('Dárek je zase volný.'); }) }, '✓ Koupím já'),
-        el('span', { class: 'muted small' }, 'klepnutím vrátíš'),
+        boughtToggle(g.bought === true, async (v) => {
+          await api.setGiftBought(ctx.token, g.id, v);
+          await o.onChange();
+        }),
       );
     } else if (g.taken) {
       actions.appendChild(el('span', { class: 'pill grey' }, 'Už obsazeno'));
@@ -691,7 +699,7 @@ function giftRow(ctx: Ctx, g: Gift, o: GiftRowOpts): HTMLElement {
 
   return el(
     'div',
-    { class: `card tight gift ${o.claimable && g.taken && !g.mine ? 'taken' : ''}`.trim() },
+    { class: `card tight gift ${o.claimable && g.taken && !g.mine ? 'taken' : ''} ${g.bought ? 'done' : ''}`.trim() },
     el(
       'div',
       { class: 'body' },
@@ -888,6 +896,12 @@ function tierBreakdown(items: { tier: Tier }[]): string {
     .join(' · ');
 }
 
+/** „koupeno 2 z 5“, nebo prázdno, když ještě není koupené nic. */
+function boughtSummary(items: { bought?: boolean | null }[]): string {
+  const done = items.filter((i) => i.bought === true).length;
+  return items.length === 0 ? '' : `koupeno ${done} z ${items.length}`;
+}
+
 function giftCount(n: number): string {
   return `${n} ${plural(n, 'dárek', 'dárky', 'dárků')}`;
 }
@@ -939,6 +953,7 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
           'div',
           { class: 'grow' },
           el('strong', {}, `${giftCount(all.length)} pro ${purchases.length} ${plural(purchases.length, 'člověka', 'lidi', 'lidí')}`),
+          el('div', { class: 'small', style: 'font-weight:600;color:var(--green)' }, boughtSummary(all)),
           el('div', { class: 'muted small' }, tierBreakdown(all)),
         ),
         el('span', { 'aria-hidden': 'true', style: 'font-size:1.6rem' }, '🎅'),
@@ -959,7 +974,11 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
                 el('h3', {}, p.person_name),
                 p.off_app ? el('span', { class: 'pill grey' }, 'není v aplikaci') : null,
               ),
-              el('div', { class: 'muted small' }, `${giftCount(p.gifts.length + p.extras.length)} · ${tierBreakdown([...p.gifts, ...p.extras])}`),
+              el(
+                'div',
+                { class: 'muted small' },
+                `${giftCount(p.gifts.length + p.extras.length)} · ${boughtSummary([...p.gifts, ...p.extras])}`,
+              ),
             ),
             p.off_app ? null : el('a', { class: 'small', href: `#/osoba/${p.person_id}` }, 'celý seznam'),
           ),
@@ -989,7 +1008,7 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
           ...p.gifts.map((g) =>
             el(
               'div',
-              { class: 'card tight gift' },
+              { class: `card tight gift ${g.bought ? 'done' : ''}`.trim() },
               el(
                 'div',
                 { class: 'body' },
@@ -1000,6 +1019,10 @@ async function purchasesView(main: HTMLElement, ctx: Ctx): Promise<void> {
               el(
                 'div',
                 { class: 'actions' },
+                boughtToggle(g.bought === true, async (v) => {
+                  await api.setGiftBought(ctx.token, g.id, v);
+                  await load();
+                }),
                 el(
                   'button',
                   {
@@ -1227,11 +1250,16 @@ async function settingsView(main: HTMLElement, ctx: Ctx): Promise<void> {
                   el(
                     'span',
                     { class: 'muted small' },
-                    `${p.gifts.length + p.extras.length} ${plural(p.gifts.length + p.extras.length, 'dárek', 'dárky', 'dárků')}`,
+                    `${giftCount(p.gifts.length + p.extras.length)} · ${boughtSummary([...p.gifts, ...p.extras])}`,
                   ),
                 ),
               ),
-              el('div', { class: 'muted small', style: 'border-top:1px solid var(--line);padding-top:6px' }, tierBreakdown(all)),
+              el(
+                'div',
+                { class: 'small', style: 'border-top:1px solid var(--line);padding-top:6px;font-weight:600;color:var(--green)' },
+                boughtSummary(all),
+              ),
+              el('div', { class: 'muted small' }, tierBreakdown(all)),
             ),
         el('a', { class: 'btn secondary small', href: '#/nakupy', style: 'align-self:flex-start' }, 'Otevřít nákupy'),
       );
