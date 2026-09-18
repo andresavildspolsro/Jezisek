@@ -136,12 +136,15 @@ export async function renderLanding(root: HTMLElement): Promise<void> {
         el('div', { class: 'step' }, el('span', { class: 'n' }, '2'), el('div', {}, 'Pozvi rodinu odkazem')),
         el('div', { class: 'step' }, el('span', { class: 'n' }, '3'), el('div', {}, 'Zaškrtni, co komu koupíš')),
       ),
+      // Kdo má účet, dostane se dovnitř i bez kódu skupiny.
+      accountLoginCard('Přihlásit se', 'Máš u nás účet? Stačí e-mail a heslo, kód skupiny nepotřebuješ.'),
       last
         ? el(
             'div',
             { class: 'card stack' },
-            el('h2', {}, 'Vítej zpátky'),
-            el('a', { class: 'btn block', href: `#/s/${last}` }, 'Přihlásit se'),
+            el('h2', {}, 'Přihlásit se PINem'),
+            el('p', { class: 'muted small' }, `Do skupiny, kterou jsi tu měl naposled (kód ${last}).`),
+            el('a', { class: 'btn secondary block', href: `#/s/${last}` }, 'Pokračovat'),
           )
         : null,
       el(
@@ -326,7 +329,7 @@ function loginForm(preview: GroupPreview, code: string): HTMLElement {
 }
 
 /** Přihlášení účtem: e-mailem s heslem, nebo Googlem. */
-function accountLoginCard(): HTMLElement {
+function accountLoginCard(title?: string, note?: string): HTMLElement {
   const err = el('div');
   const email = emailField();
   const password = passwordField();
@@ -390,7 +393,8 @@ function accountLoginCard(): HTMLElement {
   return el(
     'div',
     { class: 'card stack' },
-    separator(googleOffered ? 'nebo účtem' : 'nebo e-mailem'),
+    title ? el('h2', {}, title) : separator(googleOffered ? 'nebo účtem' : 'nebo e-mailem'),
+    note ? el('p', { class: 'muted small' }, note) : null,
     googleButton('Pokračovat přes Google'),
     form,
     err,

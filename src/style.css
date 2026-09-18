@@ -306,8 +306,9 @@ main.plain {
   align-items: flex-start;
 }
 
+/* Zamluvený dárek jen zjemníme, přeškrtnutí působí jako chyba. */
 .gift.taken {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
 .gift .body {
@@ -320,8 +321,10 @@ main.plain {
   overflow-wrap: anywhere;
 }
 
-.gift.taken .title {
-  text-decoration: line-through;
+.gift.taken .title,
+.gift.done .title {
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .gift .meta {
@@ -387,10 +390,6 @@ main.plain {
 
 .bought:disabled {
   opacity: 0.6;
-}
-
-.gift.done .title {
-  color: var(--muted);
 }
 
 .link-out {

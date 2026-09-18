@@ -11,6 +11,10 @@ soubor, závislost ani službu. Databáze je vlastní Supabase projekt
 
 ## Jak to funguje
 
+- **Přihlásit se jde i bez kódu skupiny.** Kdo má účet, zadá na úvodní
+  stránce e-mail a heslo; `session_from_auth` vrátí token i první skupinu.
+  Kód je potřeba jen k přihlášení PINem (jména jsou jedinečná v rámci
+  skupiny) a k připojení do další skupiny.
 - **Skupiny.** Aplikace je jeden veřejný odkaz, lidé se nacházejí přes
   skupiny. Kdo začíná, založí skupinu a dostane kód / odkaz pozvánky
   (`#/s/KÓD`). Kdo ho otevře, buď se přihlásí (výběr jména + PIN), nebo se
