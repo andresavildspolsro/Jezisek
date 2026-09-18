@@ -17,7 +17,7 @@ import {
   toast,
 } from './ui';
 import { navigate, resolveAccount } from './main';
-import { authErrorText, googleOffered, googleUrl, heldAccount, onlyWithGoogle, pending, sendRecovery, signIn, signUp } from './account';
+import { authErrorText, googleOffered, googleUrl, heldAccount, onlyWithGoogle, pending, sendRecovery, signIn, signUpOrIn } from './account';
 
 function hero(title: string, subtitle?: string): HTMLElement {
   return el(
@@ -480,7 +480,7 @@ function registerForm(preview: GroupPreview, code: string): HTMLElement {
         location.href = googleUrl();
         return;
       }
-      const { jwt } = await signUp(email.value, password.value);
+      const { jwt } = await signUpOrIn(email.value, password.value);
       if (jwt) {
         await resolveAccount(jwt);
       } else {
@@ -599,7 +599,7 @@ export async function renderCreateGroup(root: HTMLElement): Promise<void> {
           location.href = googleUrl();
           return;
         }
-        const { jwt } = await signUp(email.value, password.value);
+        const { jwt } = await signUpOrIn(email.value, password.value);
         if (jwt) {
           await resolveAccount(jwt);
         } else {

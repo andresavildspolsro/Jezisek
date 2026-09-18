@@ -73,6 +73,31 @@ export async function signUp(email: string, password: string): Promise<{ jwt: st
   return { jwt: r.access_token ?? null };
 }
 
+/**
+ * Založí účet, a když už existuje, rovnou se jím přihlásí. Supabase totiž na
+ * registraci existujícího e-mailu odpoví bez tokenu a nic neposílá, takže
+ * čekat na potvrzovací zprávu by znamenalo čekat marně.
+ */
+export async function signUpOrIn(
+  email: string,
+  password: string,
+): Promise<{ jwt: string | null; needsConfirm: boolean }> {
+  try {
+    const { jwt } = await signUp(email, password);
+    if (jwt) return { jwt, needsConfirm: false };
+  } catch (e) {
+    if (!/already registered|already been registered|user already/i.test(e instanceof AuthError ? e.code : '')) throw e;
+  }
+  try {
+    return { jwt: await signIn(email, password), needsConfirm: false };
+  } catch (e) {
+    const code = e instanceof AuthError ? e.code : '';
+    if (/not confirmed/i.test(code)) return { jwt: null, needsConfirm: true };
+    if (/invalid login credentials/i.test(code)) throw new AuthError('wrong_password_existing');
+    throw e;
+  }
+}
+
 let providersPromise: Promise<{ google: boolean; email: boolean }> | null = null;
 
 /** Co má projekt zapnuté. Ptáme se jednou, odpověď je veřejná. */
@@ -233,6 +258,7 @@ export function authErrorText(e: unknown): string {
   if (/email not confirmed/i.test(code)) return 'Nejdřív potvrď e-mail odkazem, který ti přišel.';
   if (/already registered|already been registered/i.test(code)) return 'Tenhle e-mail už účet má. Přihlas se jím.';
   if (/password/i.test(code) && /least|short|6/i.test(code)) return 'Heslo musí mít aspoň 6 znaků.';
+  if (code === 'wrong_password_existing') return 'Tenhle e-mail už účet má, ale heslo nesedí. Zkus jiné, nebo si nech poslat nové přes Zapomenuté heslo.';
   if (/rate limit|too many/i.test(code)) return 'Příliš mnoho pokusů. Zkus to za chvíli.';
   if (/provider is not enabled|unsupported provider/i.test(code)) return 'Přihlášení Googlem zatím není zapnuté.';
   if (!code) return 'Přihlášení se nepovedlo. Zkus to prosím znovu.';

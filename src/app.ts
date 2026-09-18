@@ -27,7 +27,7 @@ import {
 } from './ui';
 import { navigate } from './main';
 import { downloadDoc, printDoc, purchasesDoc, wishlistDoc, type ExportDoc } from './export';
-import { authErrorText, googleOffered, googleUrl, onlyWithGoogle, pending, signIn, signUp } from './account';
+import { authErrorText, googleOffered, googleUrl, onlyWithGoogle, pending, signUpOrIn } from './account';
 
 interface Ctx {
   token: string;
@@ -1429,32 +1429,29 @@ function accountCard(ctx: Ctx): HTMLElement {
         connect.disabled = true;
         pending.set({ kind: 'link' });
         try {
-          const { jwt } = await signUp(email.value, password.value);
+          const { jwt, needsConfirm } = await signUpOrIn(email.value, password.value);
           if (jwt) {
             await finishLink(jwt);
             return;
           }
           clear(err);
-          mount(
-            err,
-            el(
-              'div',
-              { class: 'notice' },
-              `Poslali jsme ti e-mail na ${email.value.trim()}. Potvrď ho odkazem, pak se sem vrať a klepni na Připojit e-mail ještě jednou.`,
-            ),
-          );
+          if (needsConfirm) {
+            mount(
+              err,
+              el(
+                'div',
+                { class: 'notice' },
+                `Poslali jsme ti e-mail na ${email.value.trim()}. Potvrď ho odkazem, pak se sem vrať a klepni na Připojit e-mail ještě jednou.`,
+              ),
+            );
+          } else {
+            mount(err, errorBox('Účet se nepodařilo ověřit. Zkus to prosím znovu.'));
+          }
           connect.disabled = false;
         } catch (ex) {
-          // Když už účet existuje, zkusíme rovnou přihlášení.
-          try {
-            const jwt = await signIn(email.value, password.value);
-            await finishLink(jwt);
-            return;
-          } catch {
-            pending.clear();
-            mount(err, errorBox(authErrorText(ex)));
-            connect.disabled = false;
-          }
+          pending.clear();
+          mount(err, errorBox(authErrorText(ex)));
+          connect.disabled = false;
         }
       },
     },
