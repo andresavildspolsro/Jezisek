@@ -66,7 +66,10 @@ export async function signIn(email: string, password: string): Promise<string> {
  * nepřijde a člověk musí nejdřív kliknout na odkaz ve zprávě.
  */
 export async function signUp(email: string, password: string): Promise<{ jwt: string | null }> {
-  const r = await call('signup', { email: email.trim(), password, options: { emailRedirectTo: redirectTarget() } });
+  const r = await call(`signup?redirect_to=${encodeURIComponent(redirectTarget())}`, {
+    email: email.trim(),
+    password,
+  });
   return { jwt: r.access_token ?? null };
 }
 
@@ -104,7 +107,7 @@ export function googleUrl(): string {
 }
 
 export async function sendRecovery(email: string): Promise<void> {
-  await call('recover', { email: email.trim(), options: { redirectTo: redirectTarget() } });
+  await call(`recover?redirect_to=${encodeURIComponent(redirectTarget())}`, { email: email.trim() });
 }
 
 export async function setPassword(jwt: string, password: string): Promise<void> {

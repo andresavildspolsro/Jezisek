@@ -74,9 +74,11 @@ hodinu a 20 za den na člověka.
 
 V Supabase (projekt `jezisek`):
 
-- **Authentication → URL Configuration**: Site URL na adresu aplikace, do
-  Redirect URLs přidat tutéž adresu. Bez toho se odkazy z e-mailů a návrat
-  od Googlu vrátí jinam.
+- **Authentication → URL Configuration**: Site URL na adresu aplikace
+  (`https://jezisek.vercel.app`) a tutéž adresu i s `/**` do Redirect URLs.
+  Aplikace posílá návratovou adresu jako `redirect_to` u každé registrace i
+  obnovy hesla, ale Supabase ji přijme jen tehdy, když je na seznamu; jinak
+  odkaz v e-mailu míří na výchozí `http://localhost:3000`.
 - **Google je zatím vypnutý.** V `.env` je `VITE_GOOGLE_LOGIN=off`, takže
   aplikace Google nikde nenabízí ani nezmiňuje. Až ho budeš chtít: v Google
   Cloud založ OAuth klienta (typ Web application, Authorized redirect URI

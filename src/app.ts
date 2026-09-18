@@ -1435,7 +1435,15 @@ function accountCard(ctx: Ctx): HTMLElement {
             return;
           }
           clear(err);
-          mount(err, el('div', { class: 'notice' }, `Poslali jsme ti e-mail na ${email.value.trim()}. Odkazem v něm účet připojíš.`));
+          mount(
+            err,
+            el(
+              'div',
+              { class: 'notice' },
+              `Poslali jsme ti e-mail na ${email.value.trim()}. Potvrď ho odkazem, pak se sem vrať a klepni na Připojit e-mail ještě jednou.`,
+            ),
+          );
+          connect.disabled = false;
         } catch (ex) {
           // Když už účet existuje, zkusíme rovnou přihlášení.
           try {

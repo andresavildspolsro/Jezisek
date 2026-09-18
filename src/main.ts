@@ -42,6 +42,16 @@ export async function resolveAccount(jwt: string): Promise<void> {
       return;
     }
 
+    // Ověřený účet bez profilu, ale s přihlášením v aplikaci: připojíme ho.
+    // Sem vede i odkaz z potvrzovacího e-mailu otevřený na stejném zařízení.
+    if (session.token) {
+      await api.linkAuth(jwt, session.token);
+      heldAccount.clear();
+      toast('Účet je připojený.');
+      navigate('#/ja');
+      return;
+    }
+
     if (p?.kind === 'register' && p.code && p.name && p.gifts) {
       const r = await api.registerWithAuth(jwt, p.code, p.name, p.gifts as GiftInput[]);
       heldAccount.clear();
